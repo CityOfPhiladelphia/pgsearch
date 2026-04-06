@@ -25,8 +25,7 @@ apps/api/
 ├── config.ts                       # Default config values, config merging logic
 ├── db/
 │   ├── pool.ts                     # PostgreSQL connection pool (wraps @phila/db-postgres)
-│   ├── schema.sql                  # Full DDL: tables, indexes, materialized view
-│   └── migrate.ts                  # Simple migration runner (applies schema.sql)
+│   └── schema.sql                  # Full DDL: tables, indexes, materialized view, helper functions
 ├── middleware/
 │   ├── auth.ts                     # Three-tier auth: admin key, index key, search key
 │   └── error.ts                    # Consistent error response formatting
@@ -253,6 +252,38 @@ packages:
 
 `packages/ingest/tsconfig.json`: Same pattern as embeddings.
 
+- [ ] **Step 5b: Create vitest.config.ts for each package**
+
+Each of `packages/embeddings/`, `packages/client/`, `packages/ingest/` needs a `vitest.config.ts`:
+
+```typescript
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    include: ['test/**/*.test.ts'],
+  },
+})
+```
+
+- [ ] **Step 5c: Update apps/api/tsconfig.json include pattern**
+
+The existing `"include": ["*.ts"]` only picks up root-level files. Change to:
+
+```json
+"include": ["**/*.ts"]
+```
+
+This ensures TypeScript compiles files in `db/`, `middleware/`, `routes/`, `services/`, and `test/` subdirectories.
+
+- [ ] **Step 5d: Update root package.json workspaces**
+
+Add `packages/*` to the `workspaces` array in root `package.json` to stay consistent with `pnpm-workspace.yaml`:
+
+```json
+"workspaces": ["cdk", "apps/*", "packages/*"]
+```
+
 - [ ] **Step 6: Add test dependencies to apps/api**
 
 Add to `apps/api/package.json` devDependencies:
@@ -325,7 +356,6 @@ git commit -m "feat: scaffold monorepo packages and test infrastructure"
 **Files:**
 - Create: `apps/api/db/schema.sql`
 - Create: `apps/api/db/pool.ts`
-- Create: `apps/api/db/migrate.ts`
 - Create: `apps/api/test/setup.ts`
 
 - [ ] **Step 1: Write test/setup.ts**
@@ -374,6 +404,11 @@ export async function teardownSchema(): Promise<void> {
 
 export async function cleanupTestData(): Promise<void> {
   const p = await getTestPool()
+  // Drop dynamic per-index HNSW indexes before deleting index rows
+  const indexes = await p.query('SELECT index_id FROM search_indexes')
+  for (const row of indexes.rows) {
+    await p.query(`DROP INDEX IF EXISTS idx_segments_embedding_${row.index_id}`)
+  }
   await p.query('DELETE FROM search_segments')
   await p.query('DELETE FROM search_documents')
   await p.query('DELETE FROM search_indexes')
@@ -449,9 +484,14 @@ CREATE INDEX IF NOT EXISTS idx_segments_body_tsvector ON search_segments USING G
 CREATE INDEX IF NOT EXISTS idx_segments_document_id ON search_segments (document_id);
 CREATE INDEX IF NOT EXISTS idx_segments_index_id ON search_segments (index_id);
 
--- Materialized view for IDF computation
--- Note: tsvector lexeme extraction method to be finalized during implementation.
--- This view computes document frequency per term per index.
+-- Helper function: extract lexemes from a tsvector as a text array.
+-- PostgreSQL does not have a built-in tsvector_to_array. This strips positions.
+CREATE OR REPLACE FUNCTION tsvector_to_array(tv tsvector) RETURNS text[] AS $$
+  SELECT array_agg(word) FROM ts_stat('SELECT ' || quote_literal(tv::text) || '::tsvector')
+$$ LANGUAGE sql IMMUTABLE STRICT;
+
+-- Materialized view for IDF computation.
+-- Computes document frequency per term per index (how many documents contain each term).
 CREATE MATERIALIZED VIEW IF NOT EXISTS term_document_frequencies AS
 SELECT
     sub.index_id,
@@ -461,24 +501,24 @@ FROM (
     SELECT
         d.index_id,
         d.document_id,
-        lexeme AS term
+        unnest(tsvector_to_array(s.body_tsvector)) AS term
     FROM search_documents d
-    JOIN search_segments s ON s.document_id = d.document_id,
-    LATERAL unnest(tsvector_to_array(s.body_tsvector)) AS lexeme
+    JOIN search_segments s ON s.document_id = d.document_id
+    WHERE s.body_tsvector IS NOT NULL
     UNION
     SELECT
         d.index_id,
         d.document_id,
-        lexeme AS term
-    FROM search_documents d,
-    LATERAL unnest(tsvector_to_array(d.title_tsvector)) AS lexeme
+        unnest(tsvector_to_array(d.title_tsvector)) AS term
+    FROM search_documents d
+    WHERE d.title_tsvector IS NOT NULL
 ) sub
 GROUP BY sub.index_id, sub.term;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
 ```
 
-Note: The `tsvector_to_array` function may not exist natively. If not, we'll create a helper function or use `ts_stat`. This will be validated in step 4.
+Note: The helper function `tsvector_to_array` uses `ts_stat` internally, which is a standard PostgreSQL function. This is used within the materialized view; if performance is a concern at scale, consider replacing with a `ts_stat`-based approach that operates on table queries directly.
 
 - [ ] **Step 4: Verify schema applies against test database**
 
@@ -1011,7 +1051,7 @@ Implement `createIndex`, `getIndex`, `listIndexes`, `updateIndex`, `deleteIndex`
 
 On delete: DROP the per-index HNSW index, then DELETE from `search_indexes` (cascades to documents and segments).
 
-On update: JSON merge the config column (`config || $1::jsonb`), update `updated_at`.
+On update: Deep-merge using `mergeConfig()` at the application layer — read existing config, apply `mergeConfig(existingConfig, partialUpdate)`, write full config back. Do NOT use PostgreSQL's `||` operator for JSONB, as it does a shallow merge and would overwrite nested objects like `embedding` and `field_weights`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1025,6 +1065,40 @@ Wire Hono routes for all admin endpoints. Apply `adminAuth` middleware. Route ha
 - [ ] **Step 6: Refactor auth middleware**
 
 Now that index service exists, update `indexAuth` and `searchAuth` middleware to load the index row by name, verify the key against the stored hash, and attach the `SearchIndex` object to the Hono context via `c.set('index', index)`. If the index doesn't exist, return 404. If the key doesn't match, return 401.
+
+- [ ] **Step 6b: Add auth integration tests**
+
+Add to `apps/api/test/indexes.test.ts`:
+
+```typescript
+describe('auth middleware integration', () => {
+  it('indexAuth passes with valid index key', async () => {
+    const pool = await getTestPool()
+    const result = await createIndex(pool, { name: 'auth-test' })
+    const index = await getIndex(pool, 'auth-test')
+    expect(await verifyKey(result.index_key, index!.index_key_hash)).toBe(true)
+  })
+
+  it('indexAuth rejects with invalid index key', async () => {
+    const pool = await getTestPool()
+    await createIndex(pool, { name: 'auth-reject' })
+    const index = await getIndex(pool, 'auth-reject')
+    expect(await verifyKey('idx_wrong_key', index!.index_key_hash)).toBe(false)
+  })
+
+  it('searchAuth passes with valid search key', async () => {
+    const pool = await getTestPool()
+    const result = await createIndex(pool, { name: 'search-auth' })
+    const index = await getIndex(pool, 'search-auth')
+    expect(await verifyKey(result.search_key, index!.search_key_hash)).toBe(true)
+  })
+})
+```
+
+- [ ] **Step 6c: Run auth integration tests**
+
+Run: `cd apps/api && pnpm test -- test/indexes.test.ts`
+Expected: PASS — keys generated at creation verify against stored hashes.
 
 - [ ] **Step 7: Commit**
 
@@ -1471,14 +1545,40 @@ describe('ingest service', () => {
     expect(seg.rows[0].body_tsvector).toBeTruthy()
   })
 
-  it('deletes a document and its segments', async () => {
+  it('increments total_documents on new document', async () => {
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'counter-1',
+      title: 'First',
+      body: 'First document content.',
+    }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
+
+    const idx = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id = $1', [indexId])
+    expect(idx.rows[0].total_documents).toBe(1)
+  })
+
+  it('does not increment total_documents on upsert of existing document', async () => {
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'counter-1',
+      title: 'First Updated',
+      body: 'Updated content.',
+    }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
+
+    const idx = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id = $1', [indexId])
+    expect(idx.rows[0].total_documents).toBe(1) // still 1, not 2
+  })
+
+  it('deletes a document and decrements total_documents', async () => {
     await ingestDocument(pool, indexId, adapter, {
       external_id: 'to-delete',
       title: 'Delete Me',
       body: 'Content to be deleted.',
     }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
 
+    const before = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id = $1', [indexId])
     await deleteDocument(pool, indexId, 'to-delete')
+    const after = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id = $1', [indexId])
+
+    expect(after.rows[0].total_documents).toBe(before.rows[0].total_documents - 1)
 
     const doc = await pool.query(
       "SELECT * FROM search_documents WHERE external_id = 'to-delete' AND index_id = $1",
@@ -1543,11 +1643,82 @@ git commit -m "feat: add document ingest pipeline with chunking and hash-based d
 Add to `apps/api/test/ingest.test.ts` or create a separate test:
 
 ```typescript
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { getTestPool, setupSchema, teardownSchema, closePool } from './setup'
+import { createIndex } from '../services/indexes'
+import { ingestDocument } from '../services/ingest'
+import { refreshIndex } from '../services/refresh'
+import { createTestAdapter } from '@phila/search-embeddings'
+
 describe('materialized view refresh', () => {
-  it('refreshes term frequencies after threshold is met', async () => {
-    // Ingest enough documents to trigger a refresh (set threshold low for test)
-    // Verify term_document_frequencies has data after refresh
-    // Verify avg_title_length and avg_body_length are updated on the index
+  let pool: any
+  let indexId: number
+  const adapter = createTestAdapter(384)
+
+  beforeAll(async () => {
+    await setupSchema()
+    pool = await getTestPool()
+    // Create index with low refresh threshold for testing
+    const result = await createIndex(pool, {
+      name: 'refresh-test',
+      config: { refresh_threshold: 2 },
+    })
+    const row = await pool.query("SELECT index_id FROM search_indexes WHERE name = 'refresh-test'")
+    indexId = row.rows[0].index_id
+  })
+  afterAll(async () => { await teardownSchema(); await closePool() })
+
+  it('populates term_document_frequencies after refresh', async () => {
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'doc-a',
+      title: 'Parking Permits',
+      body: 'Apply for a residential parking permit.',
+    }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
+
+    await refreshIndex(pool, indexId)
+
+    const tdf = await pool.query(
+      'SELECT * FROM term_document_frequencies WHERE index_id = $1',
+      [indexId]
+    )
+    expect(tdf.rows.length).toBeGreaterThan(0)
+  })
+
+  it('updates avg_title_length and avg_body_length on the index', async () => {
+    await refreshIndex(pool, indexId)
+
+    const idx = await pool.query(
+      'SELECT avg_title_length, avg_body_length FROM search_indexes WHERE index_id = $1',
+      [indexId]
+    )
+    expect(idx.rows[0].avg_title_length).toBeGreaterThan(0)
+    expect(idx.rows[0].avg_body_length).toBeGreaterThan(0)
+  })
+
+  it('resets docs_changed_since_refresh after refresh', async () => {
+    await refreshIndex(pool, indexId)
+
+    const idx = await pool.query(
+      'SELECT docs_changed_since_refresh FROM search_indexes WHERE index_id = $1',
+      [indexId]
+    )
+    expect(idx.rows[0].docs_changed_since_refresh).toBe(0)
+  })
+
+  it('auto-refreshes when threshold is met via ingest', async () => {
+    // Threshold is 2, so 2nd ingest should trigger refresh
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'doc-b',
+      title: 'Property Taxes',
+      body: 'Pay your property taxes online.',
+    }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
+
+    // After 2 documents ingested with threshold 2, refresh should have triggered
+    const idx = await pool.query(
+      'SELECT docs_changed_since_refresh, last_refreshed_at FROM search_indexes WHERE index_id = $1',
+      [indexId]
+    )
+    expect(idx.rows[0].last_refreshed_at).not.toBeNull()
   })
 })
 ```
@@ -1736,6 +1907,10 @@ describe('vector search', () => {
       title: 'Property Taxes',
       body: 'Pay your property taxes online or by mail.',
     }, { max_segment_tokens: 500, max_segments_per_document: 100, text_search_config: 'english' })
+
+    // Manually refresh so BM25F path has IDF data in term_document_frequencies
+    const { refreshIndex } = await import('../services/refresh')
+    await refreshIndex(pool, indexId)
   })
 
   afterAll(async () => { await teardownSchema(); await closePool() })
