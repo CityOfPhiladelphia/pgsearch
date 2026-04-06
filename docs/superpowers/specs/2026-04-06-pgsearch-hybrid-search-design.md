@@ -149,7 +149,7 @@ Response:
 
 The response reports how many segments were created/updated vs unchanged, giving callers visibility into whether re-ingests are doing meaningful work.
 
-**DELETE /index/:name/documents/:external_id** — Remove a document and all its segments. Decrements `total_documents` on the index.
+**DELETE /index/:name/documents/:external_id** — Remove a document and all its segments. Decrements `total_documents` and increments `docs_changed_since_refresh` on the index (deletion changes corpus statistics).
 
 ### Search Endpoints (requires `x-search-key`)
 
@@ -179,7 +179,7 @@ Response:
 }
 ```
 
-Results are deduplicated by document — each result represents the best-matching segment from a distinct document.
+`total` is the count of distinct documents matching the query (after deduplication, before `limit` is applied). Results are deduplicated by document — each result represents the best-matching segment from a distinct document.
 
 ### Public Endpoints (no auth)
 
@@ -220,9 +220,9 @@ CREATE TABLE search_indexes (
     config              JSONB NOT NULL DEFAULT '{}',
     index_key_hash      TEXT NOT NULL,
     search_key_hash     TEXT NOT NULL,
-    total_documents     INTEGER NOT NULL DEFAULT 0,  -- maintained via trigger on search_documents insert/delete
-    avg_title_length    FLOAT NOT NULL DEFAULT 0,   -- refreshed with materialized view
-    avg_body_length     FLOAT NOT NULL DEFAULT 0,   -- refreshed with materialized view
+    total_documents     INTEGER NOT NULL DEFAULT 0,  -- maintained by application on document insert/delete
+    avg_title_length    FLOAT NOT NULL DEFAULT 0,   -- AVG(title_length) across all documents in index; refreshed with materialized view
+    avg_body_length     FLOAT NOT NULL DEFAULT 0,   -- AVG(body_length) across all segments in index; refreshed with materialized view
     last_refreshed_at   TIMESTAMPTZ,
     docs_changed_since_refresh INTEGER NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -337,9 +337,9 @@ WITH DATA;
 CREATE UNIQUE INDEX idx_tdf_pk ON term_document_frequencies (index_id, term);
 ```
 
-Note: `tsvector_to_array` is a helper that extracts lexemes from a tsvector. If not available natively, implement as `SELECT unnest(regexp_split_to_array(tsvector::text, '''\\s+'''))` or use `ts_stat` with a dynamically constructed query per index. The exact extraction method will be validated during implementation.
+Note: Lexeme extraction from tsvector requires stripping position information. The exact extraction method (e.g., `ts_stat` with a dynamically constructed query per index, or a custom function) will be validated during implementation. The view definition above illustrates the required output shape and semantics.
 
-The view also includes title terms so that IDF is computed across all fields a document contributes to the corpus.
+The view includes title terms so that IDF is computed across all fields a document contributes to the corpus.
 
 ---
 
@@ -447,6 +447,8 @@ Manual refresh is always available via `POST /admin/indexes/:name/refresh`.
 
 For bulk loads: the threshold batches refreshes naturally (refreshing every ~100 documents rather than every document). Callers can also skip threshold-based refresh and call the manual endpoint once after the full bulk load completes.
 
+**Known trade-off:** The materialized view is global across all indexes. Refreshing it due to activity on one index recomputes IDF stats for all indexes. At the target scale this is acceptable. If it becomes a bottleneck with many indexes, the alternative is per-index materialized views or per-index tables.
+
 ---
 
 ## Embedding Adapter
@@ -533,3 +535,4 @@ Before embedding, each segment's text is prepended with the document title: `"{t
 - Per-query blend weight override
 - Relevance feedback loops (click-through tracking)
 - Key rotation endpoints for index/search keys
+- Search result pagination (offset or cursor-based)
