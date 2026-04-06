@@ -106,7 +106,7 @@ Response:
 }
 ```
 
-Keys are returned once at creation time. If lost, admin can regenerate via a key rotation endpoint.
+Keys are returned once at creation time. Key rotation is a Phase 2 feature.
 
 **GET /admin/indexes** — List all indexes with summary stats.
 
@@ -149,7 +149,7 @@ Response:
 
 The response reports how many segments were created/updated vs unchanged, giving callers visibility into whether re-ingests are doing meaningful work.
 
-**DELETE /index/:name/documents/:external_id** — Remove a document and all its segments.
+**DELETE /index/:name/documents/:external_id** — Remove a document and all its segments. Decrements `total_documents` on the index.
 
 ### Search Endpoints (requires `x-search-key`)
 
@@ -185,6 +185,25 @@ Results are deduplicated by document — each result represents the best-matchin
 
 **GET /public/health** — Health check with database connectivity status.
 
+### Error Responses
+
+All errors return a consistent JSON shape:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Body exceeds maximum segment limit (100)"
+  }
+}
+```
+
+Standard error codes:
+- `UNAUTHORIZED` (401) — missing or invalid auth key
+- `NOT_FOUND` (404) — index or document not found
+- `VALIDATION_ERROR` (400) — invalid payload, missing required fields, guardrail violation
+- `INTERNAL_ERROR` (500) — unexpected server error
+
 ---
 
 ## Database Schema
@@ -201,7 +220,9 @@ CREATE TABLE search_indexes (
     config              JSONB NOT NULL DEFAULT '{}',
     index_key_hash      TEXT NOT NULL,
     search_key_hash     TEXT NOT NULL,
-    total_documents     INTEGER NOT NULL DEFAULT 0,
+    total_documents     INTEGER NOT NULL DEFAULT 0,  -- maintained via trigger on search_documents insert/delete
+    avg_title_length    FLOAT NOT NULL DEFAULT 0,   -- refreshed with materialized view
+    avg_body_length     FLOAT NOT NULL DEFAULT 0,   -- refreshed with materialized view
     last_refreshed_at   TIMESTAMPTZ,
     docs_changed_since_refresh INTEGER NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -260,10 +281,11 @@ Chunks of document body text. Many-to-one relationship with documents.
 CREATE TABLE search_segments (
     segment_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id     UUID NOT NULL REFERENCES search_documents(document_id) ON DELETE CASCADE,
+    index_id        INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
     segment_index   INTEGER NOT NULL,
     body            TEXT NOT NULL,
     content_hash    TEXT NOT NULL,
-    embedding       VECTOR,  -- dimension set per-index based on embedding model
+    embedding       VECTOR,  -- untyped; dimension varies per index
     body_tsvector   TSVECTOR,
     body_length     INTEGER NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -271,8 +293,19 @@ CREATE TABLE search_segments (
 
 CREATE INDEX idx_segments_body_tsvector ON search_segments USING GIN (body_tsvector);
 CREATE INDEX idx_segments_document_id ON search_segments (document_id);
-CREATE INDEX idx_segments_embedding ON search_segments USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX idx_segments_index_id ON search_segments (index_id);
 ```
+
+**Vector index strategy:** The `embedding` column is untyped `VECTOR` to support different dimensions per index. HNSW indexes require a fixed dimension, so vector indexes are created per-index as partial indexes when the index is created:
+
+```sql
+-- Created automatically when a search index is created (e.g., 384 dims)
+CREATE INDEX idx_segments_embedding_<index_id>
+    ON search_segments USING hnsw ((embedding::vector(384)) vector_cosine_ops)
+    WHERE index_id = <index_id>;
+```
+
+HNSW is used instead of IVFFlat because it does not require pre-existing training data — indexes can be created on empty tables and populated incrementally.
 
 ### term_document_frequencies (Materialized View)
 
@@ -281,19 +314,32 @@ Precomputed IDF inputs per index, refreshed on threshold or manually.
 ```sql
 CREATE MATERIALIZED VIEW term_document_frequencies AS
 SELECT
-    d.index_id,
-    word AS term,
-    ndoc AS document_frequency
-FROM search_documents d
-JOIN search_segments s ON s.document_id = d.document_id
-, LATERAL ts_stat('SELECT body_tsvector FROM search_segments WHERE document_id = ''' || d.document_id || '''')
-GROUP BY d.index_id, word
+    sub.index_id,
+    sub.term,
+    COUNT(DISTINCT sub.document_id) AS document_frequency
+FROM (
+    SELECT
+        d.index_id,
+        d.document_id,
+        unnest(tsvector_to_array(s.body_tsvector)) AS term
+    FROM search_documents d
+    JOIN search_segments s ON s.document_id = d.document_id
+    UNION
+    SELECT
+        d.index_id,
+        d.document_id,
+        unnest(tsvector_to_array(d.title_tsvector)) AS term
+    FROM search_documents d
+) sub
+GROUP BY sub.index_id, sub.term
 WITH DATA;
 
 CREATE UNIQUE INDEX idx_tdf_pk ON term_document_frequencies (index_id, term);
 ```
 
-Note: The exact materialized view query will need refinement during implementation to correctly aggregate term frequencies across all segments within each index. The above illustrates intent.
+Note: `tsvector_to_array` is a helper that extracts lexemes from a tsvector. If not available natively, implement as `SELECT unnest(regexp_split_to_array(tsvector::text, '''\\s+'''))` or use `ts_stat` with a dynamically constructed query per index. The exact extraction method will be validated during implementation.
+
+The view also includes title terms so that IDF is computed across all fields a document contributes to the corpus.
 
 ---
 
@@ -320,7 +366,7 @@ Two independent scoring paths, merged and blended.
 ### Step 3: Score
 
 For BM25F candidates:
-- Compute field-weighted BM25F score using title term frequency (from document), body term frequency (from segment), IDF (from `term_document_frequencies`), and corpus stats (from index)
+- Compute field-weighted BM25F score using title term frequency (from document), body term frequency (from segment), IDF (from `term_document_frequencies`), and corpus stats (`total_documents`, `avg_title_length`, `avg_body_length` from `search_indexes`)
 - Apply field weights (default: title=3.0, body=1.0) and BM25 parameters (k1=1.2, b=0.75)
 
 For vector candidates:
@@ -365,14 +411,16 @@ On `POST /index/:name/documents`:
 4. **Hash** — SHA-256 each segment's body text
 5. **Diff** — if document with this `external_id` exists in this index, compare new segment hashes against stored `content_hash` values
 6. **Embed** — generate embeddings only for segments with new or changed hashes. Each segment is embedded as `"{title}\n\n{segment_body}"` to include title context.
-7. **Tsvector** — generate tsvectors only for changed segments using the index's `text_search_config`
+7. **Tsvector** — generate title tsvector for the document and body tsvectors for changed segments, using the index's `text_search_config`
 8. **Upsert** — within a transaction:
    - Upsert `search_documents` row (title, metadata, title_tsvector, title_length, updated_at)
-   - Delete segments that no longer exist (removed or repositioned)
-   - Insert new / update changed segments (body, content_hash, embedding, body_tsvector, body_length)
+   - Diff segments by `content_hash` (not position) — reuse existing embeddings for unchanged content even if segment_index shifted
+   - Delete segments whose content_hash no longer appears in the new segment set
+   - Insert new / update changed segments (body, content_hash, embedding, body_tsvector, body_length, index_id)
    - Update `segment_count` on document
+   - Increment `total_documents` on index (on new document insert only)
    - Increment `docs_changed_since_refresh` on index
-9. **Refresh check** — if `docs_changed_since_refresh` exceeds the index's `refresh_threshold`, execute `REFRESH MATERIALIZED VIEW CONCURRENTLY term_document_frequencies` and reset counter
+9. **Refresh check** — if `docs_changed_since_refresh` exceeds the index's `refresh_threshold`, execute `REFRESH MATERIALIZED VIEW CONCURRENTLY term_document_frequencies`, recompute `avg_title_length` and `avg_body_length` on the index, and reset counter
 10. **Respond** — return external_id, segment counts (total, changed, unchanged), status
 
 ---
@@ -389,6 +437,7 @@ On every ingest, after upserting the document:
 1. Increment `docs_changed_since_refresh`
 2. If counter ≥ `refresh_threshold` (from index config, default 100):
    - `REFRESH MATERIALIZED VIEW CONCURRENTLY term_document_frequencies`
+   - Recompute and update `avg_title_length` and `avg_body_length` on `search_indexes`
    - Reset counter to 0
    - Update `last_refreshed_at`
 
@@ -410,6 +459,7 @@ Pluggable embedding generation configured per index.
 interface EmbeddingAdapter {
   embed(texts: string[]): Promise<number[][]>
   dimensions: number
+  model: string
 }
 ```
 
@@ -443,7 +493,7 @@ Local models stored in S3 Express One Zone. Loaded to Lambda ephemeral storage (
 
 ### Dimension Handling
 
-pgvector column dimensions are effectively per-index since each index can use a different embedding model. The `dimensions` value in index config determines the vector size at index creation.
+Different indexes can use different embedding dimensions. The `embedding` column on `search_segments` is untyped `VECTOR`, and per-index HNSW partial indexes handle the dimension constraint (see Database Schema section). The `dimensions` value in index config determines the vector size and the HNSW index definition.
 
 ---
 
