@@ -42,10 +42,17 @@ export const indexAuth = createMiddleware(async (c: Context, next: Next) => {
   if (!indexName) {
     return apiError(c, 'VALIDATION_ERROR', 'Missing index name')
   }
-  // Placeholder: full DB verification will be added in Task 5 when index service exists.
-  // For now, store key and name on context for route handler to verify.
-  c.set('indexKey', indexKey)
-  c.set('indexName', indexName)
+
+  const { getIndex } = await import('../services/indexes')
+  const { getPool } = await import('../db/pool')
+  const pool = await getPool()
+  const index = await getIndex(pool, indexName)
+  if (!index) return apiError(c, 'NOT_FOUND', `Index '${indexName}' not found`)
+  if (!(await verifyKey(indexKey, index.index_key_hash))) {
+    return apiError(c, 'UNAUTHORIZED', 'Invalid index key')
+  }
+
+  c.set('index', index)
   await next()
 })
 
@@ -54,7 +61,20 @@ export const searchAuth = createMiddleware(async (c: Context, next: Next) => {
   if (!searchKey) {
     return apiError(c, 'UNAUTHORIZED', 'Missing x-search-key header')
   }
-  c.set('searchKey', searchKey)
-  c.set('indexName', c.req.param('name'))
+  const indexName = c.req.param('name')
+  if (!indexName) {
+    return apiError(c, 'VALIDATION_ERROR', 'Missing index name')
+  }
+
+  const { getIndex } = await import('../services/indexes')
+  const { getPool } = await import('../db/pool')
+  const pool = await getPool()
+  const index = await getIndex(pool, indexName)
+  if (!index) return apiError(c, 'NOT_FOUND', `Index '${indexName}' not found`)
+  if (!(await verifyKey(searchKey, index.search_key_hash))) {
+    return apiError(c, 'UNAUTHORIZED', 'Invalid search key')
+  }
+
+  c.set('index', index)
   await next()
 })

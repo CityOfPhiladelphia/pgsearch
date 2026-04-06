@@ -21,16 +21,16 @@ export const DEFAULT_CONFIG: IndexConfig = {
   refresh_threshold: 100,
 }
 
-export function mergeConfig(overrides: Partial<IndexConfig>): IndexConfig {
+export function mergeConfig(overrides: Partial<IndexConfig>, base: IndexConfig = DEFAULT_CONFIG): IndexConfig {
   return {
-    ...DEFAULT_CONFIG,
+    ...base,
     ...overrides,
     embedding: {
-      ...DEFAULT_EMBEDDING,
+      ...(base.embedding || DEFAULT_EMBEDDING),
       ...(overrides.embedding || {}),
     },
     field_weights: {
-      ...DEFAULT_CONFIG.field_weights,
+      ...(base.field_weights || DEFAULT_CONFIG.field_weights),
       ...(overrides.field_weights || {}),
     },
   }
