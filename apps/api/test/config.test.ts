@@ -1,0 +1,51 @@
+// ABOUTME: Tests for configuration defaults and merging logic.
+// ABOUTME: Verifies that partial config overrides merge correctly with defaults.
+
+import { describe, it, expect } from 'vitest'
+import { mergeConfig, DEFAULT_CONFIG } from '../config'
+
+describe('config', () => {
+  it('returns full defaults when no overrides provided', () => {
+    const config = mergeConfig({})
+    expect(config.bm25_k1).toBe(1.2)
+    expect(config.bm25_b).toBe(0.75)
+    expect(config.field_weights).toEqual({ title: 3.0, body: 1.0 })
+    expect(config.blend_alpha).toBe(0.6)
+    expect(config.max_segment_tokens).toBe(500)
+    expect(config.max_segments_per_document).toBe(100)
+    expect(config.refresh_threshold).toBe(100)
+    expect(config.text_search_config).toBe('english')
+  })
+
+  it('merges partial overrides with defaults', () => {
+    const config = mergeConfig({ bm25_k1: 1.5, blend_alpha: 0.8 })
+    expect(config.bm25_k1).toBe(1.5)
+    expect(config.blend_alpha).toBe(0.8)
+    expect(config.bm25_b).toBe(0.75) // default preserved
+  })
+
+  it('merges nested embedding config', () => {
+    const config = mergeConfig({
+      embedding: { provider: 'bedrock', model: 'amazon.titan-embed-text-v2:0', dimensions: 1024 }
+    })
+    expect(config.embedding.provider).toBe('bedrock')
+    expect(config.embedding.dimensions).toBe(1024)
+  })
+
+  it('merges partial embedding config preserving defaults', () => {
+    const config = mergeConfig({
+      embedding: { provider: 'bedrock' } as any
+    })
+    expect(config.embedding.provider).toBe('bedrock')
+    expect(config.embedding.model).toBe('all-MiniLM-L6-v2') // default preserved
+    expect(config.embedding.dimensions).toBe(384) // default preserved
+  })
+
+  it('merges partial field_weights preserving defaults', () => {
+    const config = mergeConfig({
+      field_weights: { title: 5.0 } as any
+    })
+    expect(config.field_weights.title).toBe(5.0)
+    expect(config.field_weights.body).toBe(1.0) // default preserved
+  })
+})
