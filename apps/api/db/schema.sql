@@ -5,7 +5,7 @@
 -- PostgreSQL does not have a built-in tsvector_to_array.
 CREATE OR REPLACE FUNCTION tsvector_to_array(tv tsvector) RETURNS text[] AS $$
   SELECT array_agg(word) FROM ts_stat('SELECT ' || quote_literal(tv::text) || '::tsvector')
-$$ LANGUAGE sql IMMUTABLE STRICT;
+$$ LANGUAGE sql STABLE STRICT;
 
 CREATE TABLE IF NOT EXISTS search_indexes (
     index_id            SERIAL PRIMARY KEY,

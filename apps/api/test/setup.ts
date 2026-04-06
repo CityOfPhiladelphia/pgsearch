@@ -13,7 +13,7 @@ const TEST_DB_CONFIG = {
   password: process.env.TEST_DB_PASSWORD || 'testpassword',
 }
 
-let pool: Pool
+let pool: Pool | undefined
 
 export async function getTestPool(): Promise<Pool> {
   if (!pool) {
@@ -53,6 +53,6 @@ export async function cleanupTestData(): Promise<void> {
 export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end()
-    pool = undefined as any
+    pool = undefined
   }
 }
