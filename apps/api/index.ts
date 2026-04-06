@@ -1,0 +1,30 @@
+// ABOUTME: Lambda entry point for the pgsearch hybrid search API.
+// ABOUTME: Wires all route groups (admin, ingest, search, health) with auth middleware.
+
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { handle } from 'hono/aws-lambda'
+import { adminRoutes } from './routes/admin'
+import { ingestRoutes } from './routes/ingest'
+import { searchRoutes } from './routes/search'
+import { healthRoutes } from './routes/health'
+
+const app = new Hono()
+
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-index-key', 'x-search-key'],
+}))
+
+app.route('/', healthRoutes)
+app.route('/', adminRoutes)
+app.route('/', ingestRoutes)
+app.route('/', searchRoutes)
+
+app.onError((err, c) => {
+  console.error('Unhandled error:', err)
+  return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
+})
+
+export const handler = handle(app)
