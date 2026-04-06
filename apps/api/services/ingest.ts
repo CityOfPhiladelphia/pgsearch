@@ -1,0 +1,216 @@
+// ABOUTME: Document ingest pipeline for pgsearch.
+// ABOUTME: Handles chunking, content hashing, diff-based embedding, tsvector generation, and upsert.
+
+import crypto from 'crypto'
+import type { Pool } from 'pg'
+import type { EmbeddingAdapter } from '@phila/search-embeddings'
+import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
+import { chunkText, countTokens } from './chunk'
+import { mergeConfig } from '../config'
+
+interface IngestConfigOverrides {
+  max_segments_per_document?: number
+  max_segment_tokens?: number
+}
+
+function hashContent(text: string): string {
+  return crypto.createHash('sha256').update(text).digest('hex')
+}
+
+export async function ingestDocument(
+  pool: Pool,
+  indexId: number,
+  adapter: EmbeddingAdapter,
+  request: IngestRequest,
+  configOverrides?: IngestConfigOverrides,
+): Promise<IngestResponse> {
+  if (!request.external_id || !request.title || !request.body) {
+    throw new Error('external_id, title, and body are required')
+  }
+
+  // Get index config and merge overrides
+  const indexRow = await pool.query('SELECT config FROM search_indexes WHERE index_id = $1', [indexId])
+  if (indexRow.rows.length === 0) {
+    throw new Error(`Index ${indexId} not found`)
+  }
+  const rawConfig = typeof indexRow.rows[0].config === 'string'
+    ? JSON.parse(indexRow.rows[0].config)
+    : indexRow.rows[0].config
+  const config: IndexConfig = mergeConfig(rawConfig)
+
+  const maxSegmentTokens = configOverrides?.max_segment_tokens ?? config.max_segment_tokens
+  const maxSegmentsPerDoc = configOverrides?.max_segments_per_document ?? config.max_segments_per_document
+
+  // Chunk the body text
+  const segments = chunkText(request.body, { maxTokens: maxSegmentTokens, minTokens: 50 })
+
+  // Guardrail: reject if too many segments
+  if (segments.length > maxSegmentsPerDoc) {
+    throw new Error(
+      `Document produces ${segments.length} segments, exceeding limit of ${maxSegmentsPerDoc}`
+    )
+  }
+
+  // Hash each segment
+  const segmentHashes = segments.map(hashContent)
+
+  // Diff against existing document
+  const existingDoc = await pool.query(
+    'SELECT document_id FROM search_documents WHERE index_id = $1 AND external_id = $2',
+    [indexId, request.external_id]
+  )
+
+  const existingHashes = new Set<string>()
+  if (existingDoc.rows.length > 0) {
+    const hashRows = await pool.query(
+      'SELECT content_hash FROM search_segments WHERE document_id = $1',
+      [existingDoc.rows[0].document_id]
+    )
+    for (const row of hashRows.rows) {
+      existingHashes.add(row.content_hash)
+    }
+  }
+
+  // Identify changed vs unchanged segments
+  const changedIndices: number[] = []
+  const unchangedIndices: number[] = []
+  for (let i = 0; i < segments.length; i++) {
+    if (existingHashes.has(segmentHashes[i])) {
+      unchangedIndices.push(i)
+    } else {
+      changedIndices.push(i)
+    }
+  }
+
+  // Compute hashes to remove (in old but not in new)
+  const newHashSet = new Set(segmentHashes)
+  const removedHashes = [...existingHashes].filter(h => !newHashSet.has(h))
+
+  // Embed only changed segments (prepend title for context)
+  let embeddings: number[][] = []
+  if (changedIndices.length > 0) {
+    const textsToEmbed = changedIndices.map(i => `${request.title}\n\n${segments[i]}`)
+    embeddings = await adapter.embed(textsToEmbed)
+  }
+
+  const textSearchConfig = config.text_search_config || 'english'
+
+  // Execute everything in a transaction
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    // Upsert document
+    const upsertResult = await client.query(
+      `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count)
+       VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8)
+       ON CONFLICT (index_id, external_id) DO UPDATE SET
+         title = $3,
+         title_tsvector = to_tsvector($4, $5),
+         title_length = $6,
+         metadata = $7,
+         segment_count = $8,
+         updated_at = NOW()
+       RETURNING document_id, (xmax = 0) AS is_insert`,
+      [
+        indexId,
+        request.external_id,
+        request.title,
+        textSearchConfig,
+        request.title,
+        countTokens(request.title),
+        JSON.stringify(request.metadata || {}),
+        segments.length,
+      ]
+    )
+
+    const documentId = upsertResult.rows[0].document_id
+    const isInsert = upsertResult.rows[0].is_insert
+
+    // Delete removed segments
+    if (removedHashes.length > 0) {
+      await client.query(
+        'DELETE FROM search_segments WHERE document_id = $1 AND content_hash = ANY($2)',
+        [documentId, removedHashes]
+      )
+    }
+
+    // Update segment_index for unchanged segments (position may have changed)
+    for (const i of unchangedIndices) {
+      await client.query(
+        'UPDATE search_segments SET segment_index = $1 WHERE document_id = $2 AND content_hash = $3',
+        [i, documentId, segmentHashes[i]]
+      )
+    }
+
+    // Insert segments with new content
+    if (changedIndices.length > 0) {
+      for (let j = 0; j < changedIndices.length; j++) {
+        const i = changedIndices[j]
+        const embedding = embeddings[j]
+        const segBody = segments[i]
+
+        await client.query(
+          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
+           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+          [
+            documentId,
+            indexId,
+            i,
+            segBody,
+            segmentHashes[i],
+            JSON.stringify(embedding),
+            textSearchConfig,
+            segBody,
+            countTokens(segBody),
+          ]
+        )
+      }
+    }
+
+    // Update index counters
+    if (isInsert) {
+      await client.query(
+        'UPDATE search_indexes SET total_documents = total_documents + 1 WHERE index_id = $1',
+        [indexId]
+      )
+    }
+    await client.query(
+      'UPDATE search_indexes SET docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
+      [indexId]
+    )
+
+    await client.query('COMMIT')
+
+    return {
+      external_id: request.external_id,
+      segments: segments.length,
+      changed: changedIndices.length,
+      unchanged: unchangedIndices.length,
+      status: 'indexed',
+    }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function deleteDocument(
+  pool: Pool,
+  indexId: number,
+  externalId: string,
+): Promise<void> {
+  const result = await pool.query(
+    'DELETE FROM search_documents WHERE index_id = $1 AND external_id = $2 RETURNING document_id',
+    [indexId, externalId]
+  )
+
+  if (result.rows.length > 0) {
+    await pool.query(
+      'UPDATE search_indexes SET total_documents = total_documents - 1, docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
+      [indexId]
+    )
+  }
+}

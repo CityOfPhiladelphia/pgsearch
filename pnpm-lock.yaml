@@ -20,6 +20,9 @@ importers:
       '@phila/db-postgres':
         specifier: ^0.0.8
         version: 0.0.8
+      '@phila/search-embeddings':
+        specifier: workspace:*
+        version: link:../../packages/embeddings
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
