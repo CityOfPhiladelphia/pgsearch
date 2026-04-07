@@ -1,5 +1,5 @@
-// ABOUTME: Three-tier authentication middleware for pgsearch API.
-// ABOUTME: Verifies admin, index, and search keys against bcrypt hashes.
+// ABOUTME: Per-index authentication middleware for pgsearch API.
+// ABOUTME: Verifies index and search keys against bcrypt hashes stored per index.
 
 import { createMiddleware } from 'hono/factory'
 import bcrypt from 'bcryptjs'
@@ -20,18 +20,6 @@ export async function hashKey(key: string): Promise<string> {
 export async function verifyKey(key: string, hash: string): Promise<boolean> {
   return bcrypt.compare(key, hash)
 }
-
-export const adminAuth = createMiddleware(async (c: Context, next: Next) => {
-  const apiKey = c.req.header('x-api-key')
-  if (!apiKey) {
-    return apiError(c, 'UNAUTHORIZED', 'Missing x-api-key header')
-  }
-  const adminKeyHash = process.env.ADMIN_KEY_HASH
-  if (!adminKeyHash || !(await verifyKey(apiKey, adminKeyHash))) {
-    return apiError(c, 'UNAUTHORIZED', 'Invalid admin key')
-  }
-  await next()
-})
 
 export const indexAuth = createMiddleware(async (c: Context, next: Next) => {
   const indexKey = c.req.header('x-index-key')

@@ -75,10 +75,10 @@ export class PgsearchClient {
       body: options?.body ? JSON.stringify(options.body) : undefined,
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: { code: 'UNKNOWN', message: response.statusText } }))
-      throw new Error(`pgsearch API error: ${error.error?.code || response.status} - ${error.error?.message || response.statusText}`)
+      const body = await response.json().catch(() => ({ error: { code: 'UNKNOWN', message: response.statusText } })) as { error?: { code?: string; message?: string } }
+      throw new Error(`pgsearch API error: ${body.error?.code || response.status} - ${body.error?.message || response.statusText}`)
     }
     const text = await response.text()
-    return text ? JSON.parse(text) : undefined
+    return (text ? JSON.parse(text) : undefined) as T
   }
 }

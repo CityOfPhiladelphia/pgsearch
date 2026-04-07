@@ -14,6 +14,7 @@ export function createBedrockAdapter(config: BedrockAdapterConfig): EmbeddingAda
 
   async function getClient() {
     if (!client) {
+      // @ts-ignore — SDK is available at runtime in Lambda, not at build time
       const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime')
       client = { Client: new BedrockRuntimeClient({ region: config.region || 'us-east-1' }), InvokeModelCommand }
     }
