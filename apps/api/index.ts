@@ -8,7 +8,7 @@ import { adminRoutes } from './routes/admin'
 import { ingestRoutes } from './routes/ingest'
 import { searchRoutes } from './routes/search'
 import { healthRoutes } from './routes/health'
-import { getPool } from './db/pool'
+import { getPool, registerVectorType } from './db/pool'
 import { runMigrations } from './db/migrate'
 
 const app = new Hono()
@@ -22,6 +22,7 @@ app.use('*', cors({
 app.use('*', async (c, next) => {
   const pool = await getPool()
   await runMigrations(pool)
+  await registerVectorType()
   await next()
 })
 
