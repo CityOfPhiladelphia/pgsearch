@@ -1,5 +1,5 @@
 // ABOUTME: Lambda entry point for the pgsearch hybrid search API.
-// ABOUTME: Wires all route groups (admin, ingest, search, health) with auth middleware.
+// ABOUTME: Wires all route groups (admin, ingest, search, health) with cold-start migrations.
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
@@ -8,6 +8,8 @@ import { adminRoutes } from './routes/admin'
 import { ingestRoutes } from './routes/ingest'
 import { searchRoutes } from './routes/search'
 import { healthRoutes } from './routes/health'
+import { getPool } from './db/pool'
+import { runMigrations } from './db/migrate'
 
 const app = new Hono()
 
@@ -16,6 +18,12 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-index-key', 'x-search-key'],
 }))
+
+app.use('*', async (c, next) => {
+  const pool = await getPool()
+  await runMigrations(pool)
+  await next()
+})
 
 app.route('/', healthRoutes)
 app.route('/', adminRoutes)

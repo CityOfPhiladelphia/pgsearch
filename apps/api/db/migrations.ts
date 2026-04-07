@@ -1,5 +1,17 @@
--- pgsearch database schema
+// ABOUTME: Database migration definitions for pgsearch schema evolution.
+// ABOUTME: Each migration is a versioned SQL statement applied once on cold start.
 
+export interface Migration {
+  version: number
+  description: string
+  sql: string
+}
+
+export const migrations: Migration[] = [
+  {
+    version: 1,
+    description: 'Initial schema with search indexes, documents, segments, and term frequency view',
+    sql: `
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS search_indexes (
@@ -52,8 +64,6 @@ CREATE INDEX IF NOT EXISTS idx_segments_body_tsvector ON search_segments USING G
 CREATE INDEX IF NOT EXISTS idx_segments_document_id ON search_segments (document_id);
 CREATE INDEX IF NOT EXISTS idx_segments_index_id ON search_segments (index_id);
 
--- Materialized view for IDF computation.
--- Computes document frequency per term per index (how many documents contain each term).
 CREATE MATERIALIZED VIEW IF NOT EXISTS term_document_frequencies AS
 SELECT
     sub.index_id,
@@ -78,3 +88,6 @@ FROM (
 GROUP BY sub.index_id, sub.term;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
+    `,
+  },
+]

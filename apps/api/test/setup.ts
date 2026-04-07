@@ -1,9 +1,8 @@
 // ABOUTME: Test database setup and teardown helpers.
-// ABOUTME: Connects to the test PostgreSQL, applies schema, and cleans up between runs.
+// ABOUTME: Connects to the test PostgreSQL, applies schema via migration runner, and cleans up between runs.
 
 import { Pool } from 'pg'
-import { readFileSync } from 'fs'
-import { join } from 'path'
+import { runMigrations, resetMigrationState } from '../db/migrate'
 
 const TEST_DB_CONFIG = {
   host: process.env.TEST_DB_HOST || 'localhost',
@@ -24,9 +23,8 @@ export async function getTestPool(): Promise<Pool> {
 
 export async function setupSchema(): Promise<void> {
   const p = await getTestPool()
-  await p.query('CREATE EXTENSION IF NOT EXISTS vector')
-  const schema = readFileSync(join(__dirname, '..', 'db', 'schema.sql'), 'utf-8')
-  await p.query(schema)
+  resetMigrationState()
+  await runMigrations(p)
 }
 
 export async function teardownSchema(): Promise<void> {
@@ -35,7 +33,8 @@ export async function teardownSchema(): Promise<void> {
   await p.query('DROP TABLE IF EXISTS search_segments CASCADE')
   await p.query('DROP TABLE IF EXISTS search_documents CASCADE')
   await p.query('DROP TABLE IF EXISTS search_indexes CASCADE')
-  await p.query('DROP FUNCTION IF EXISTS public.tsvector_to_array(tsvector) CASCADE')
+  await p.query('DROP TABLE IF EXISTS schema_migrations CASCADE')
+  resetMigrationState()
 }
 
 export async function cleanupTestData(): Promise<void> {
