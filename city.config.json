@@ -1,0 +1,35 @@
+{
+  "appName": "pgsearch",
+  "applicationType": "lambda-postgres-api",
+  "department": "4-oit",
+  "team": "Software Engineering",
+  "contact": "darren.mcdowell@phila.gov",
+  "compliance": [],
+  "confidentiality": "low",
+  "cdkPath": "./cdk",
+  "packageManager": "pnpm",
+  "networkCidrs": ["10.8.100.0/22","10.8.175.0/22","10.14.0.0/16"],
+  "environments": {
+    "dev": {
+      "profile": "OpenSearchDev",
+      "vpc": "TestCityNetVpc",
+      "wildcardDomain": "",
+      "apiDomain": "",
+      "frontendDomain": ""
+    },
+    "test": {
+      "profile": "OpenSearchDev",
+      "vpc": "TestCityNetVpc",
+      "wildcardDomain": "",
+      "apiDomain": "",
+      "frontendDomain": ""
+    },
+    "prod": {
+      "profile": "OpenSearchDev",
+      "vpc": "TestCityNetVpc",
+      "wildcardDomain": "",
+      "apiDomain": "",
+      "frontendDomain": ""
+    }
+  }
+}

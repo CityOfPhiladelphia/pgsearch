@@ -1,0 +1,4 @@
+{
+  "app": "pnpm exec ts-node app.ts",
+  "requireApproval": "broadening"
+}
