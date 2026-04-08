@@ -25,8 +25,9 @@ export function createTurndown(options: TurndownService.Options = {}): TurndownS
     replacement: () => '',
   })
 
-  // Override turndown's default list item rule, which pads the marker with three
-  // spaces (producing "-   one"). We want a single space to match standard markdown.
+  // Override turndown's default list item rule, which pads markers with extra spaces
+  // (producing "-   one" and "1.  first"). A single space after the marker keeps the
+  // output compact: matters for embedding token budget and for readable search snippets.
   td.addRule('list-item', {
     filter: 'li',
     replacement: (content, node, ruleOptions) => {

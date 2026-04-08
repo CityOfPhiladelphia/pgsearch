@@ -33,6 +33,33 @@ describe('toMarkdown', () => {
     expect(doc.body).toContain('2. second')
   })
 
+  it('uses exactly one space after the bullet marker', async () => {
+    const parse = pipeline(toMarkdown())
+    const doc = await parse('<html><body><ul><li>one</li><li>two</li></ul></body></html>')
+    expect(doc.body).toBe('- one\n- two')
+  })
+
+  it('uses exactly one space after the ordered list marker', async () => {
+    const parse = pipeline(toMarkdown())
+    const doc = await parse('<html><body><ol><li>first</li><li>second</li></ol></body></html>')
+    expect(doc.body).toBe('1. first\n2. second')
+  })
+
+  it('respects the start attribute on ordered lists', async () => {
+    const parse = pipeline(toMarkdown())
+    const doc = await parse('<html><body><ol start="5"><li>five</li><li>six</li></ol></body></html>')
+    expect(doc.body).toContain('5. five')
+    expect(doc.body).toContain('6. six')
+  })
+
+  it('indents nested unordered lists by 2 spaces', async () => {
+    const parse = pipeline(toMarkdown())
+    const doc = await parse('<html><body><ul><li>outer<ul><li>inner</li></ul></li></ul></body></html>')
+    // Outer: "- outer", inner: "  - inner" (2-space indent)
+    expect(doc.body).toMatch(/^- outer/m)
+    expect(doc.body).toMatch(/^  - inner/m)
+  })
+
   it('converts links with inline style', async () => {
     const parse = pipeline(toMarkdown())
     const doc = await parse('<html><body><p>see <a href="https://example.com">example</a></p></body></html>')
@@ -65,10 +92,14 @@ describe('toMarkdown', () => {
   it('strips empty paragraphs', async () => {
     const parse = pipeline(toMarkdown())
     const doc = await parse('<html><body><p>kept</p><p></p><p>   </p></body></html>')
-    // Should have "kept" but no orphan blank lines from empty paragraphs
     expect(doc.body).toContain('kept')
-    // The body should not have more than two consecutive newlines from the empties
     expect(doc.body).not.toMatch(/\n\n\n\n/)
+  })
+
+  it('strips paragraphs containing only <br> (turndown default would leave hard-break spaces)', async () => {
+    const parse = pipeline(toMarkdown())
+    const doc = await parse('<html><body><p>before</p><p><br></p><p>after</p></body></html>')
+    expect(doc.body).toBe('before\n\nafter')
   })
 
   it('sets ctx.body and the final document body matches', async () => {
