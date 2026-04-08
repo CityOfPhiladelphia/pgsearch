@@ -3,3 +3,5 @@
 
 export { pipeline } from './pipeline'
 export type { Transform, ParseContext, ParsedDocument } from './pipeline'
+export { extractMeta } from './transforms/extract-meta'
+export type { ExtractMetaOptions } from './transforms/extract-meta'
