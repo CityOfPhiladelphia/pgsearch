@@ -187,4 +187,10 @@ describe('extractMeta', () => {
     const doc = await parse(html('<meta name="description">'))
     expect(doc.metadata.description).toBeUndefined()
   })
+
+  it('trims whitespace from meta content values', async () => {
+    const parse = pipeline(extractMeta())
+    const doc = await parse(html('<meta property="og:title" content="   Padded Title   ">'))
+    expect(doc.metadata.og_title).toBe('Padded Title')
+  })
 })

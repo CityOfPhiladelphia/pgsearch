@@ -75,7 +75,7 @@ export function extractMeta(options: ExtractMetaOptions = {}): Transform {
       if (onlyKeys && !onlyKeys.has(key)) return
       if (isBlocked(key, userExcludes)) return
 
-      ctx.metadata[key] = content
+      ctx.metadata[key] = content.trim()
     })
 
     // Extract <title>
@@ -116,7 +116,7 @@ export function extractMeta(options: ExtractMetaOptions = {}): Transform {
     // Extras: always added, even when only is set
     for (const [key, selector] of Object.entries(extras)) {
       const el = $(selector).first()
-      const content = el.attr('content') ?? el.attr('href') ?? el.text().trim()
+      const content = el.attr('content')?.trim() ?? el.attr('href')?.trim() ?? el.text().trim()
       if (content) {
         ctx.metadata[key] = content
       }
