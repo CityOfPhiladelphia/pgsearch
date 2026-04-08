@@ -22,6 +22,7 @@ describe('selectContent', () => {
       </body></html>
     `)
     expect(doc.body).toContain('kept')
+    expect(doc.body).toContain('class="content"')
     expect(doc.body).not.toContain('navigation text')
     expect(doc.body).not.toContain('footer text')
   })
