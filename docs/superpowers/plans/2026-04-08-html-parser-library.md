@@ -1384,6 +1384,24 @@ describe('cleanWhitespace', () => {
     const doc = await parse('<html><body><p>   hello world   </p></body></html>')
     expect(doc.body).toBe('hello world')
   })
+
+  it('preserves spaces between inline siblings (anchor mid-sentence)', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p>Please <a href="/x">click here</a> to continue.</p></body></html>')
+    expect(doc.body).toBe('Please click here to continue.')
+  })
+
+  it('preserves spaces between inline siblings (strong and em)', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p><strong>bold</strong> and <em>italic</em></p></body></html>')
+    expect(doc.body).toBe('bold and italic')
+  })
+
+  it('collapses but does not strip whitespace-only text between siblings', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p><span>a</span>   <span>b</span></p></body></html>')
+    expect(doc.body).toBe('a b')
+  })
 })
 ```
 
@@ -1401,7 +1419,7 @@ Create `packages/parse/src/transforms/clean-whitespace.ts`:
 
 ```ts
 // ABOUTME: cleanWhitespace transform — normalizes whitespace in text nodes.
-// ABOUTME: Collapses runs of whitespace and unicode whitespace to single spaces, then trims.
+// ABOUTME: Collapses runs of whitespace and unicode whitespace to single spaces.
 
 import type { Transform } from '../pipeline'
 
@@ -1416,9 +1434,17 @@ export function cleanWhitespace(): Transform {
         return this.type === 'text'
       })
       .each(function () {
-        // Cheerio text nodes have a `data` property
-        const node = this as unknown as { data: string }
-        node.data = node.data.replace(WHITESPACE_RUN, ' ').trim()
+        // Cheerio text nodes have data, prev, and next properties.
+        // Only trim text nodes that are sole children of their parent;
+        // text nodes with siblings preserve their whitespace runs (collapsed to single space)
+        // so spaces between inline siblings like <a>, <strong>, <em> are not lost.
+        const node = this as unknown as { data: string; prev: unknown; next: unknown }
+        const collapsed = node.data.replace(WHITESPACE_RUN, ' ')
+        if (node.prev === null && node.next === null) {
+          node.data = collapsed.trim()
+        } else {
+          node.data = collapsed
+        }
       })
     return ctx
   }
