@@ -55,6 +55,8 @@ function pipeline(
 ): (input: string | CheerioAPI) => Promise<ParsedDocument>
 ```
 
+**Public exports:** The package exports `pipeline`, every built-in transform, and the `Transform`, `ParseContext`, and `ParsedDocument` types. Exporting the types is essential — developers writing custom transforms need them to type the function signatures correctly.
+
 The returned function:
 1. Accepts an HTML string or a Cheerio instance
 2. If string: loads it via Cheerio
@@ -124,6 +126,8 @@ extractMeta({ exclude: [/^article_/] })          // add to default exclusions
 extractMeta({ extras: { custom_field: 'meta[name=foo]' } })  // map custom selectors to metadata keys
 ```
 
+`only`, `exclude`, and `extras` are combinable in a single call. When `only` is set, the default extraction is restricted to those keys before applying `exclude`. `extras` is always added regardless of `only`/`exclude` (the user explicitly asked for them).
+
 **Key naming convention:** Colons in source meta names become underscores (`og:title` → `og_title`) for SQL friendliness in JSONB queries.
 
 ### `extractTitle(selector?, options?)`
@@ -137,7 +141,9 @@ With a selector, uses the selector exclusively (no fallback). Pass `{ required: 
 
 ### `selectContent(selector, options?)`
 
-Narrows `ctx.$` to the selected subtree by replacing it with a Cheerio instance scoped to the matched element. Subsequent content transforms operate only within this subtree. Metadata transforms always query the original document, regardless of order — but this requires `extractMeta` to run **before** `selectContent` in the pipeline.
+Narrows `ctx.$` to the selected subtree by replacing it with a Cheerio instance scoped to the matched element. Subsequent content transforms operate only within this subtree.
+
+**Ordering note:** All transforms query whichever Cheerio instance is in `ctx.$` at the time they run. `extractMeta` must therefore run **before** `selectContent` if you want it to see the `<head>` tags. The library does not maintain a separate "root" reference — pipeline ordering is the discipline.
 
 Pass `{ required: true }` to throw if the selector matches nothing. Otherwise, missing content is a no-op.
 
@@ -166,7 +172,9 @@ Optional transform to inject metadata fields into the body before markdown conve
 injectIntoBody({ from: 'description', position: 'prepend' })
 ```
 
-If `metadata[from]` is missing, the transform is a no-op.
+The injected text is wrapped in a `<p>` element so it survives markdown conversion as a standalone paragraph (rather than being concatenated into adjacent text). For `position: 'prepend'`, the `<p>` is inserted as the first child of the working DOM root; for `position: 'append'`, it becomes the last child.
+
+If `metadata[from]` is missing or empty, the transform is a no-op.
 
 ### `toMarkdown(options?)`
 
@@ -177,13 +185,16 @@ Terminal step. Converts the working DOM to markdown using `turndown` with GitHub
 - Lists: dash bullets, no extra blank lines
 - Code blocks: fenced
 - Link style: inline
-- Strip empty paragraphs
+
+A custom turndown rule strips empty paragraphs (turndown doesn't have a built-in option for this — it requires registering a rule that filters `<p>` elements with no text content).
 
 **Options pass through to turndown:**
 ```ts
 toMarkdown({ headingStyle: 'setext' })
 toMarkdown({ linkStyle: 'referenced' })
 ```
+
+**If `toMarkdown` is omitted from a pipeline:** `ctx.body` stays `null` and is coerced to `''` at output. This is consistent with the lenient-by-default philosophy — if a developer wants the document body intentionally empty, they can omit the transform.
 
 ## Error Handling
 
