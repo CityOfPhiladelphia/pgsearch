@@ -8,18 +8,26 @@ import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { hybridSearch } from '../services/search'
 import { createBedrockAdapter } from '@phila/search-embeddings'
-import { parse } from 'node-html-parser'
+import {
+  pipeline,
+  extractMeta,
+  extractTitle,
+  selectContent,
+  remove,
+  cleanWhitespace,
+  toMarkdown,
+} from '@phila/search-parse'
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 
-function parseServicePage(html: string): { title: string; body: string } {
-  const root = parse(html)
-  const title = root.querySelector('.entry-header h2')?.textContent?.trim()
-    || root.querySelector('title')?.textContent?.trim()
-    || ''
-  const body = root.querySelector('.entry-content')?.textContent?.trim() || ''
-  return { title, body }
-}
+const parsePhilaService = pipeline(
+  extractMeta(),
+  extractTitle('.entry-header h2'),
+  remove('.breadcrumbs', '.related-content'),
+  selectContent('.entry-content'),
+  cleanWhitespace(),
+  toMarkdown(),
+)
 
 const SERVICE_PAGES = [
   'https://www.phila.gov/services/water-gas-utilities/pay-or-dispute-a-water-bill/pay-a-water-bill/',
@@ -107,7 +115,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
         console.log(`  Skipping ${slug} (fetch failed: ${err.message})`)
         continue
       }
-      const parsed = parseServicePage(html)
+      const parsed = await parsePhilaService(html)
 
       // Some pages may be topic indexes with minimal body text — skip those
       if (parsed.body.length < 50) {
@@ -121,7 +129,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
         external_id: slug,
         title: parsed.title,
         body: parsed.body,
-        metadata: { source_url: url },
+        metadata: { ...parsed.metadata, source_url: url },
       })
 
       expect(result.status).toBe('indexed')
