@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r --filter './apps/*' --filter './packages/embeddings' --filter './packages/client' --filter './packages/ingest' test",
+    "test": "pnpm -r --filter './apps/*' --filter './packages/embeddings' --filter './packages/client' --filter './packages/parse' test",
     "synth": "cd cdk && cdk synth",
     "deploy": "cd cdk && cdk deploy",
     "diff": "cd cdk && cdk diff"
