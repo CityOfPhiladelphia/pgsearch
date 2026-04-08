@@ -15,12 +15,23 @@ export function injectIntoBody(options: InjectIntoBodyOptions): Transform {
       return ctx
     }
 
-    const escaped = ctx.$('<p></p>').text(value)
-    const root = ctx.$.root()
-    if (options.position === 'prepend') {
-      root.prepend(escaped)
+    const paragraph = ctx.$('<p></p>').text(value)
+    // Prefer <body> as the insertion target so the injected paragraph lives inside the document.
+    // Fall back to the document root for narrowed fragments (e.g. after selectContent stripped <body>).
+    const body = ctx.$('body')
+    if (body.length > 0) {
+      if (options.position === 'prepend') {
+        body.prepend(paragraph)
+      } else {
+        body.append(paragraph)
+      }
     } else {
-      root.append(escaped)
+      const root = ctx.$.root()
+      if (options.position === 'prepend') {
+        root.prepend(paragraph)
+      } else {
+        root.append(paragraph)
+      }
     }
     return ctx
   }

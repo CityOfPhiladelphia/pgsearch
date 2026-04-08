@@ -66,4 +66,26 @@ describe('injectIntoBody', () => {
     `)
     expect(doc.body).toContain('Original content')
   })
+
+  it('inserts the paragraph as a child of <body>, not as a sibling of <html>', async () => {
+    const cheerio = await import('cheerio')
+    const captureHtml: import('../src/pipeline').Transform = (ctx) => {
+      // Capture the cheerio HTML structure to inspect placement
+      ctx.body = ctx.$.html()
+      return ctx
+    }
+    const parse = pipeline(
+      extractMeta(),
+      injectIntoBody({ from: 'description', position: 'prepend' }),
+      captureHtml,
+    )
+    const doc = await parse(`
+      <html>
+        <head><meta name="description" content="INJECTED_MARKER"></head>
+        <body><p>Original content</p></body>
+      </html>
+    `)
+    // The <p> with INJECTED_MARKER must appear inside <body>, not before <html>
+    expect(doc.body).toMatch(/<body>[^<]*<p>INJECTED_MARKER<\/p>/)
+  })
 })
