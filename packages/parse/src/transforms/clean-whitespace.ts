@@ -14,9 +14,17 @@ export function cleanWhitespace(): Transform {
         return this.type === 'text'
       })
       .each(function () {
-        // Cheerio text nodes have a `data` property
-        const node = this as unknown as { data: string }
-        node.data = node.data.replace(WHITESPACE_RUN, ' ').trim()
+        // Cheerio text nodes have data, prev, and next properties.
+        // Only trim text nodes that are sole children of their parent;
+        // text nodes with siblings preserve their whitespace runs (collapsed to single space)
+        // so spaces between inline siblings like <a>, <strong>, <em> are not lost.
+        const node = this as unknown as { data: string; prev: unknown; next: unknown }
+        const collapsed = node.data.replace(WHITESPACE_RUN, ' ')
+        if (node.prev === null && node.next === null) {
+          node.data = collapsed.trim()
+        } else {
+          node.data = collapsed
+        }
       })
     return ctx
   }

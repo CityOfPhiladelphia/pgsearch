@@ -35,4 +35,22 @@ describe('cleanWhitespace', () => {
     const doc = await parse('<html><body><p>   hello world   </p></body></html>')
     expect(doc.body).toBe('hello world')
   })
+
+  it('preserves spaces between inline siblings (anchor mid-sentence)', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p>Please <a href="/x">click here</a> to continue.</p></body></html>')
+    expect(doc.body).toBe('Please click here to continue.')
+  })
+
+  it('preserves spaces between inline siblings (strong and em)', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p><strong>bold</strong> and <em>italic</em></p></body></html>')
+    expect(doc.body).toBe('bold and italic')
+  })
+
+  it('collapses but does not strip whitespace-only text between siblings', async () => {
+    const parse = pipeline(cleanWhitespace(), captureBody)
+    const doc = await parse('<html><body><p><span>a</span>   <span>b</span></p></body></html>')
+    expect(doc.body).toBe('a b')
+  })
 })
