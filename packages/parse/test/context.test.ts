@@ -32,8 +32,14 @@ describe('createContext', () => {
 
   it('strips HTML comments on creation', () => {
     const ctx = createContext('<html><body><!-- a comment --><p>hi</p></body></html>')
-    const html = ctx.$.html()
+    const html = ctx.$.root().html()
     expect(html).not.toContain('a comment')
+  })
+
+  it('strips top-level HTML comments before <html>', () => {
+    const ctx = createContext('<!-- top comment --><html><body><p>hi</p></body></html>')
+    const html = ctx.$.root().html()
+    expect(html).not.toContain('top comment')
   })
 
   it('accepts an existing CheerioAPI instance', async () => {
