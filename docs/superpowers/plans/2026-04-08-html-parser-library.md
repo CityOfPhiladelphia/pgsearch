@@ -1775,17 +1775,30 @@ export function injectIntoBody(options: InjectIntoBodyOptions): Transform {
       return ctx
     }
 
-    const escaped = ctx.$('<p></p>').text(value)
-    const root = ctx.$.root()
-    if (options.position === 'prepend') {
-      root.prepend(escaped)
+    const paragraph = ctx.$('<p></p>').text(value)
+    // Prefer <body> as the insertion target so the injected paragraph lives inside the document.
+    // Fall back to the document root for narrowed fragments (e.g. after selectContent stripped <body>).
+    const body = ctx.$('body')
+    if (body.length > 0) {
+      if (options.position === 'prepend') {
+        body.prepend(paragraph)
+      } else {
+        body.append(paragraph)
+      }
     } else {
-      root.append(escaped)
+      const root = ctx.$.root()
+      if (options.position === 'prepend') {
+        root.prepend(paragraph)
+      } else {
+        root.append(paragraph)
+      }
     }
     return ctx
   }
 }
 ```
+
+Note: the transform must target `<body>` when one exists; inserting on `ctx.$.root()` places the new `<p>` as a sibling of `<html>`, which violates the name of the transform and only works by accident of turndown's lenient parsing. The fall-back to root handles narrowed fragments (e.g. after `selectContent` strips the `<body>` wrapper). The branches are duplicated rather than using a ternary because Cheerio's `prepend`/`append` signatures don't unify across `Cheerio<Element>` and `Cheerio<Document>`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
