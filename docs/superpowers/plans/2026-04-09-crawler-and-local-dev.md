@@ -666,7 +666,12 @@ export const PIPELINE = {
 export type PipelineKey = (typeof PIPELINE)[keyof typeof PIPELINE]
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
-  const path = new URL(url).pathname
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return null
+  }
   if (path.startsWith('/services/')) return PIPELINE.SERVICES
   if (path.startsWith('/programs/')) return PIPELINE.PROGRAMS
   return null
@@ -1498,6 +1503,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
   }
   const start = Date.now()
   let stopRequested = false
+  // `limit` is a soft cap — concurrent handlers may overshoot by up to maxConcurrency-1.
 
   const crawler = new CheerioCrawler({
     maxConcurrency: options.maxConcurrency ?? 4,
@@ -1521,15 +1527,10 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       }
 
       const parse = pipelines[key]
-      if (!parse) {
-        console.error(`[parse] no pipeline for key ${key} (url: ${request.url})`)
-        counters.failed++
-        return
-      }
 
       let doc
       try {
-        doc = await parse($)
+        doc = await parse($.html())
         counters.parsed++
       } catch (err) {
         console.error(`[parse] failed for ${request.url}:`, (err as Error).stack ?? err)
@@ -1540,7 +1541,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       try {
         await postDocument(options.sink, doc, request.url, key)
         counters.ingested++
-        if (options.limit && counters.ingested >= options.limit) {
+        if (options.limit != null && counters.ingested >= options.limit) {
           stopRequested = true
           console.log(`[summary] limit ${options.limit} reached; stopping`)
           await crawler.autoscaledPool?.abort()

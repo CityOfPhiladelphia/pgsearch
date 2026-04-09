@@ -23,4 +23,8 @@ describe('pipelineKeyFor', () => {
     expect(pipelineKeyFor('https://www.phila.gov/departments/')).toBeNull()
     expect(pipelineKeyFor('https://www.phila.gov/news/some-article/')).toBeNull()
   })
+
+  it('returns null for malformed URLs', () => {
+    expect(pipelineKeyFor('not-a-url')).toBeNull()
+  })
 })

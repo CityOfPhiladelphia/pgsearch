@@ -20,7 +20,12 @@ export const pipelines: Record<PipelineKey, ParseFn> = {
 }
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
-  const path = new URL(url).pathname
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return null
+  }
   if (path.startsWith('/services/')) return PIPELINE.SERVICES
   if (path.startsWith('/programs/')) return PIPELINE.PROGRAMS
   return null
