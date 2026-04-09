@@ -1,3 +1,5 @@
+<!-- ABOUTME: Static dev tool for manually querying the pgsearch API during local development. -->
+<!-- ABOUTME: Open via file:// in a browser; never served in production. -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -67,7 +69,7 @@
       });
       if (!res.ok) {
         const body = await res.text();
-        $results.innerHTML = `<div class="error">${res.status} ${res.statusText}<br><pre>${escape(body)}</pre></div>`;
+        $results.innerHTML = `<div class="error">${res.status} ${escape(res.statusText)}<br><pre>${escape(body)}</pre></div>`;
         return;
       }
       const data = await res.json();
@@ -77,10 +79,12 @@
         return;
       }
       $results.innerHTML = results.map(r => {
-        const url = r.metadata?.source_url ?? '#';
+        const rawUrl = r.metadata?.source_url ?? '';
+        const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : '#';
         const type = r.metadata?.content_type ?? '';
-        const snippet = (r.snippet ?? '').slice(0, 300);
-        const truncated = (r.snippet ?? '').length > 300 ? '…' : '';
+        const raw = r.snippet ?? '';
+        const snippet = raw.slice(0, 300);
+        const truncated = raw.length > 300 ? '…' : '';
         return `
           <div class="result">
             <h3><a href="${escape(url)}" target="_blank" rel="noopener">${escape(r.title)}</a></h3>
