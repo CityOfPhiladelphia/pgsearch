@@ -10,6 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
     "@phila/db-postgres": "^0.0.8",
     "@phila/search-embeddings": "workspace:*",
     "bcryptjs": "^2.4.3",

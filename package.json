@@ -8,7 +8,9 @@
     "test": "pnpm -r --filter './apps/*' --filter './packages/embeddings' --filter './packages/client' --filter './packages/parse' test",
     "synth": "cd cdk && cdk synth",
     "deploy": "cd cdk && cdk deploy",
-    "diff": "cd cdk && cdk diff"
+    "diff": "cd cdk && cdk diff",
+    "dev:db": "docker compose -f docker-compose.test.yml up -d postgres",
+    "dev:api": "DB_HOST=localhost DB_PORT=5433 DB_NAME=pgsearch_dev DB_USER=pgsearch DB_PASSWORD=testpassword tsx watch apps/api/local.ts"
   },
   "workspaces": [
     "cdk",
@@ -18,6 +20,7 @@
   "devDependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1025.0",
     "@types/node": "^20.10.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.3.0"
   },
   "overrides": {
