@@ -2,10 +2,11 @@
 // ABOUTME: Provides helper functions to return standardized error JSON.
 
 import type { Context } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
 type ErrorCode = 'UNAUTHORIZED' | 'NOT_FOUND' | 'VALIDATION_ERROR' | 'INTERNAL_ERROR'
 
-const STATUS_MAP: Record<ErrorCode, number> = {
+const STATUS_MAP: Record<ErrorCode, ContentfulStatusCode> = {
   UNAUTHORIZED: 401,
   NOT_FOUND: 404,
   VALIDATION_ERROR: 400,

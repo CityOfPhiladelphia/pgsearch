@@ -6,7 +6,7 @@ import { indexAuth } from '../middleware/auth'
 import { ingestDocument, deleteDocument } from '../services/ingest'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
-import type { SearchIndex, IndexConfig } from '../types'
+import type { AppEnv, IndexConfig } from '../types'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import { createTestAdapter, createBedrockAdapter } from '@phila/search-embeddings'
 
@@ -17,7 +17,7 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
   return createTestAdapter(config.embedding.dimensions)
 }
 
-export const ingestRoutes = new Hono()
+export const ingestRoutes = new Hono<AppEnv>()
 ingestRoutes.use('/*', indexAuth)
 
 ingestRoutes.post('/index/:name/documents', async (c) => {
@@ -33,7 +33,7 @@ ingestRoutes.post('/index/:name/documents', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Missing required field: body (string)')
   }
 
-  const index = c.get('index') as SearchIndex
+  const index = c.get('index')
   const pool = await getPool()
   const adapter = getAdapter(index.config)
 
@@ -55,7 +55,7 @@ ingestRoutes.post('/index/:name/documents', async (c) => {
 
 ingestRoutes.delete('/index/:name/documents/:external_id', async (c) => {
   const externalId = c.req.param('external_id')
-  const index = c.get('index') as SearchIndex
+  const index = c.get('index')
   const pool = await getPool()
 
   await deleteDocument(pool, index.index_id, externalId)
