@@ -166,10 +166,13 @@ git commit -m "feat(dev): add pgsearch_dev database to test compose"
 
 ---
 
-## Task 3: Export `app` from `apps/api/index.ts` for reuse by the local entrypoint
+## Task 3: Prepare `apps/api` for local execution
+
+Two changes prep the API for being run from a Node process: export the Hono `app`, and teach `db/pool.ts` to fall back to plain env vars when `DB_SECRET_ARN` is absent (the Lambda path always sets it; the local path never will).
 
 **Files:**
 - Modify: `apps/api/index.ts`
+- Modify: `apps/api/db/pool.ts`
 
 - [ ] **Step 1: Add `export` to the existing `const app = new Hono()` declaration**
 
@@ -185,9 +188,51 @@ Change it to:
 export const app = new Hono()
 ```
 
-That's the entire change. Do not modify the `export const handler = handle(app)` line. Do not add or remove anything else.
+That's the entire change to `index.ts`. Do not modify the `export const handler = handle(app)` line. Do not add or remove anything else.
 
-- [ ] **Step 2: Verify the api still type-checks**
+- [ ] **Step 2: Add a local fallback to `apps/api/db/pool.ts`**
+
+The current `getPool` body unconditionally calls `getPhilaPool()` from `@phila/db-postgres`, which requires `DB_SECRET_ARN` and fetches credentials from AWS Secrets Manager. Locally we have neither. Add a branch:
+
+The current `getPool` is:
+
+```ts
+export async function getPool(): Promise<Pool> {
+  if (!pool) {
+    const { getPool: getPhilaPool } = await import('@phila/db-postgres')
+    pool = await getPhilaPool()
+  }
+  return pool
+}
+```
+
+Change it to:
+
+```ts
+export async function getPool(): Promise<Pool> {
+  if (!pool) {
+    if (process.env.DB_SECRET_ARN) {
+      const { getPool: getPhilaPool } = await import('@phila/db-postgres')
+      pool = await getPhilaPool()
+    } else {
+      pool = new Pool({
+        host:     process.env.DB_HOST,
+        port:     Number(process.env.DB_PORT),
+        database: process.env.DB_NAME,
+        user:     process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+      })
+    }
+  }
+  return pool
+}
+```
+
+`Pool` is already imported at the top of the file (`import { Pool } from 'pg'`). No new imports needed. The Lambda path is byte-identical because `DB_SECRET_ARN` is always set in that environment. The local path activates only when that var is absent.
+
+Note: `apps/api/test/setup.ts` builds its own pool independently of `db/pool.ts` and is not affected by this change.
+
+- [ ] **Step 3: Verify the api still type-checks**
 
 ```bash
 pnpm --filter api build
@@ -195,19 +240,24 @@ pnpm --filter api build
 
 Expected: build succeeds.
 
-- [ ] **Step 3: Run the existing api tests to confirm Lambda path is unaffected**
+- [ ] **Step 4: Run the existing api tests to confirm the Lambda path is unaffected**
 
 ```bash
 pnpm --filter api test
 ```
 
-Expected: all tests pass.
+Expected: all tests pass. Tests use their own pool (`test/setup.ts`), so they don't exercise either branch of the new code — but they do confirm nothing else broke.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/index.ts
-git commit -m "refactor(api): export Hono app for reuse by local dev entrypoint"
+git add apps/api/index.ts apps/api/db/pool.ts
+git commit -m "refactor(api): export app and add local-mode fallback to db pool
+
+The Hono app is now exported so a local Node entrypoint can wrap it.
+db/pool.ts gains a fallback that connects with plain env vars when
+DB_SECRET_ARN is absent — the Lambda path is unchanged; the local
+path activates only when that var is missing."
 ```
 
 ---
@@ -270,16 +320,9 @@ serve({ fetch: app.fetch, port }, (info) => {
 })
 ```
 
-- [ ] **Step 6: Verify the API needs the DB pool config — check `apps/api/db/pool.ts`**
+- [ ] **Step 6: Smoke-test the local API end-to-end**
 
-```bash
-```
-
-Read `apps/api/db/pool.ts` to confirm it reads from the same env vars (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) that we set in `dev:api`. If it reads from a different set (e.g. it expects `DB_SECRET_ARN` for Secrets Manager), this task needs to be revised — pause and report what `pool.ts` expects before continuing.
-
-Expected: `pool.ts` either uses the env vars directly or has a branch for local that does. If it strictly requires `DB_SECRET_ARN`, that's a blocker for this task — surface it.
-
-- [ ] **Step 7: Smoke-test the local API**
+This step is also the empirical check that Task 3 Step 2's `db/pool.ts` fallback works — if the pool wiring is wrong, the request will fail with a clear DB error.
 
 In one terminal:
 
@@ -288,17 +331,24 @@ pnpm dev:db
 pnpm dev:api
 ```
 
+Expected: `pgsearch API listening on http://localhost:3000`.
+
 In another terminal:
 
 ```bash
-curl -s http://localhost:3000/public/health
+curl -sv http://localhost:3000/public/health
 ```
 
-Expected: a JSON health response. Any HTTP 200 confirms the loop is alive. Note that the very first request runs migrations on the empty `pgsearch_dev` DB, which may take a few seconds.
+Expected: HTTP 200 with a JSON health body. The first request triggers migrations on the empty `pgsearch_dev` DB and may take a few seconds.
+
+If the response is 5xx or the API process crashes with a DB error, pause and read the error carefully:
+- "DB_SECRET_ARN environment variable required" → Task 3 Step 2's fallback didn't take effect (likely the file wasn't saved or `dev:api` is somehow setting `DB_SECRET_ARN`).
+- "ECONNREFUSED" → `pgsearch_dev` isn't reachable; verify `pnpm dev:db` is up and `psql -h localhost -p 5433 -U pgsearch -d pgsearch_dev -c '\q'` succeeds.
+- "database pgsearch_dev does not exist" → Task 2's init script didn't run. Re-run `docker compose -f docker-compose.test.yml down -v && pnpm dev:db`.
 
 Stop the dev:api process (Ctrl-C) when done.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add apps/api/local.ts apps/api/package.json package.json pnpm-lock.yaml
@@ -503,6 +553,8 @@ git commit -m "feat(api): add dev index bootstrap script"
       $results.innerHTML = results.map(r => {
         const url = r.metadata?.source_url ?? '#';
         const type = r.metadata?.content_type ?? '';
+        const snippet = (r.snippet ?? '').slice(0, 300);
+        const truncated = (r.snippet ?? '').length > 300 ? '…' : '';
         return `
           <div class="result">
             <h3><a href="${escape(url)}" target="_blank" rel="noopener">${escape(r.title)}</a></h3>
@@ -510,7 +562,7 @@ git commit -m "feat(api): add dev index bootstrap script"
               ${type ? `<span class="badge">${escape(type)}</span>` : ''}
               <span class="score">score: ${r.score.toFixed(3)}</span>
             </div>
-            <div class="snippet">${escape(r.snippet ?? '')}</div>
+            <div class="snippet">${escape(snippet)}${truncated}</div>
           </div>
         `;
       }).join('');
@@ -1430,7 +1482,7 @@ git commit -m "feat(crawler): add HTTP sink for ingest API"
 
 ```ts
 // ABOUTME: Crawl orchestrator — wires Discoverer, parse pipelines, and HTTP sink to a CheerioCrawler.
-// ABOUTME: Single straight pipe per page; no persisted state, no incremental support.
+// ABOUTME: Single straight pipe per page; no persisted state. --limit counts successful ingests.
 
 import { CheerioCrawler, log, LogLevel } from 'crawlee'
 import type { Discoverer } from './discover'

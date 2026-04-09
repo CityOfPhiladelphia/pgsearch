@@ -346,7 +346,7 @@ Exit code: `0` if `failed == 0`, `1` otherwise.
 ```ts
 // apps/api/local.ts (NEW — sketch)
 import { serve } from '@hono/node-server'
-import app from './index'      // re-export app from index.ts (currently only handler is exported)
+import { app } from './index'      // app must be exported from index.ts
 
 const port = Number(process.env.PORT ?? 3000)
 serve({ fetch: app.fetch, port }, info => {
@@ -354,9 +354,31 @@ serve({ fetch: app.fetch, port }, info => {
 })
 ```
 
-`apps/api/index.ts` is updated minimally: the existing `const app = new Hono()` becomes `export const app = new Hono()` (or a `default` export). The Lambda `handler` export stays exactly as it is. No other change to `index.ts`.
+`apps/api/index.ts` is updated minimally: the existing `const app = new Hono()` becomes `export const app = new Hono()`. The Lambda `handler` export stays exactly as it is. No other change to `index.ts`.
 
-DB connection uses the same env var pattern the Lambda already supports — `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` — with `DB_NAME=pgsearch_dev` set in the `dev:api` script.
+### DB pool: local fallback in `apps/api/db/pool.ts`
+
+`apps/api/db/pool.ts` currently delegates to `@phila/db-postgres`, which requires `DB_SECRET_ARN` and fetches credentials from AWS Secrets Manager. This works for the Lambda runtime but has no path for local dev. The local entrypoint depends on `pool.ts` being callable from a Node process with no AWS credentials, so `pool.ts` is updated to add a fallback:
+
+```ts
+// apps/api/db/pool.ts — getPool body
+if (process.env.DB_SECRET_ARN) {
+  const { getPool: getPhilaPool } = await import('@phila/db-postgres')
+  pool = await getPhilaPool()
+} else {
+  pool = new Pool({
+    host:     process.env.DB_HOST,
+    port:     Number(process.env.DB_PORT),
+    database: process.env.DB_NAME,
+    user:     process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+  })
+}
+```
+
+The Lambda path is byte-identical (`DB_SECRET_ARN` is always set there). The local path activates only when `DB_SECRET_ARN` is absent. The `dev:api` script sets `DB_HOST=localhost DB_PORT=5433 DB_NAME=pgsearch_dev DB_USER=pgsearch DB_PASSWORD=testpassword` to drive the fallback.
+
+Note: `apps/api/test/setup.ts` builds its own pool independently of `db/pool.ts` and is not affected by this change. Unifying it onto `db/pool.ts` is a possible follow-up but is out of scope for this spec.
 
 ## Dev database
 
