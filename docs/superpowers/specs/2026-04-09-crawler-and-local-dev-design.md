@@ -401,7 +401,7 @@ pnpm dev:bootstrap
 # → prints the index key and search key to stdout
 ```
 
-Implementation: a small TypeScript script under `apps/api/scripts/` (or `apps/crawler/scripts/`, TBD during implementation) that posts to the existing `/admin/indexes` admin route. Idempotent — if the index already exists, prints a "already exists" notice and exits 0. About 30 lines.
+Implementation: a small TypeScript script at `apps/api/scripts/bootstrap-dev-index.ts` that posts to the existing `/admin/indexes` admin route. Idempotent — if the index already exists, prints an "already exists" notice and exits 0. About 30 lines.
 
 The user pastes the printed `index_key` into their `INDEX_KEY` env var (or shell rc) for the crawler, and the printed `search_key` into the search.html localStorage (via the page's input).
 
@@ -499,6 +499,14 @@ INDEX_KEY=… pnpm dev:crawl --limit 10   # confirm 10 docs ingest cleanly
 ```
 
 If pages land in the local DB and search.html returns relevant hits, the wiring works. Unit-testing this code would mean asserting on Crawlee internals and `fetch` mocks, which test our mocks rather than our system.
+
+## Planning-time checks
+
+Three small things to confirm during plan-writing — none of them change the design, all of them de-risk the first implementation step:
+
+- **`POST /admin/indexes` response shape.** The bootstrap script depends on the route returning both `index_key` and `search_key` on creation, and on a distinguishable status (or error code) when the index already exists. Read `apps/api/routes/admin.ts` to confirm the actual contract before writing the bootstrap script.
+- **`extractMeta()` and `<meta class="swiftype" name="content_type">`.** The programs parse test asserts `metadata.content_type === 'programs'` from the swiftype-classed meta tag. Confirm `extractMeta()` in `@phila/search-parse` keys off `name="..."` regardless of `class`. If it doesn't, either the assertion or `extractMeta` needs adjusting.
+- **Where `--limit` is enforced.** Two reasonable places: inside the request handler (count after `postDocument` succeeds) or via `CheerioCrawler`'s `maxRequestsPerCrawl` (count requests, not successes). They behave differently when pages fail to parse. The plan should pin which one.
 
 ## Open questions
 
