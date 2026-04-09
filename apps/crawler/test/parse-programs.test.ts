@@ -24,12 +24,11 @@ describe('parseProgram', () => {
   })
 
   it('extracts the canonical URL', () => {
-    expect(typeof doc.metadata.canonical_url).toBe('string')
-    expect((doc.metadata.canonical_url as string)).toContain('/programs/camp-philly')
+    expect(doc.metadata.canonical_url).toBe('https://www.phila.gov/programs/camp-philly/')
   })
 
   it('produces markdown body with substantive content', () => {
-    expect(doc.body.length).toBeGreaterThan(300)
+    expect(doc.body.length).toBeGreaterThan(2500)
     expect(doc.body.toLowerCase()).toMatch(/sleep[- ]away|camp speers|recreation/)
   })
 
