@@ -1,5 +1,5 @@
 // ABOUTME: Parse pipeline for phila.gov services pages.
-// ABOUTME: Targets the WordPress entry-content template (.entry-header h2 + .entry-content).
+// ABOUTME: Targets the page title in .entry-header h2 and body in .entry-content.
 
 import {
   pipeline,
