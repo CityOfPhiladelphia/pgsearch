@@ -1,5 +1,4 @@
-// ABOUTME: PIPELINE constants and the URL-to-pipeline-key router.
-// ABOUTME: The pipelines registry is added by Tasks 8 and 9 once the parse functions exist.
+// ABOUTME: Routes URLs to their content-type pipeline by path prefix.
 
 export const PIPELINE = {
   SERVICES: 'services',
