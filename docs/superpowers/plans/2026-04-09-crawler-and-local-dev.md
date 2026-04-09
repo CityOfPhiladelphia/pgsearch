@@ -235,10 +235,10 @@ Note: `apps/api/test/setup.ts` builds its own pool independently of `db/pool.ts`
 - [ ] **Step 3: Verify the api still type-checks**
 
 ```bash
-pnpm --filter api build
+pnpm --filter api exec tsc --noEmit
 ```
 
-Expected: build succeeds.
+Expected: clean exit. (Use `tsc --noEmit` rather than the package's `build` script — that script runs esbuild, which bundles but does not actually type-check.)
 
 - [ ] **Step 4: Run the existing api tests to confirm the Lambda path is unaffected**
 
