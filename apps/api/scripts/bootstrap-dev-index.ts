@@ -6,6 +6,12 @@ const INDEX_NAME = process.env.INDEX_NAME ?? 'phila-services-programs'
 const FORCE = process.argv.includes('--force')
 
 async function main(): Promise<void> {
+  if (API_BASE !== 'http://localhost:3000' && !process.env.BOOTSTRAP_UNSAFE) {
+    console.error(`[bootstrap] API_BASE is '${API_BASE}'. This script is intended for local development.`)
+    console.error(`[bootstrap] Set BOOTSTRAP_UNSAFE=1 to bypass this guard if you really mean it.`)
+    process.exit(1)
+  }
+
   const existing = await fetch(`${API_BASE}/private/key/admin/indexes/${INDEX_NAME}`)
   if (existing.status === 200) {
     if (!FORCE) {
