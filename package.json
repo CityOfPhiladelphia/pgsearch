@@ -10,7 +10,8 @@
     "deploy": "cd cdk && cdk deploy",
     "diff": "cd cdk && cdk diff",
     "dev:db": "docker compose -f docker-compose.test.yml up -d postgres",
-    "dev:api": "DB_HOST=localhost DB_PORT=5433 DB_NAME=pgsearch_dev DB_USER=pgsearch DB_PASSWORD=testpassword tsx watch apps/api/local.ts"
+    "dev:api": "DB_HOST=localhost DB_PORT=5433 DB_NAME=pgsearch_dev DB_USER=pgsearch DB_PASSWORD=testpassword tsx watch apps/api/local.ts",
+    "dev:bootstrap": "tsx apps/api/scripts/bootstrap-dev-index.ts"
   },
   "workspaces": [
     "cdk",
