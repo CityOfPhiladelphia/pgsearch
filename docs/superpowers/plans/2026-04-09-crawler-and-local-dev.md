@@ -1053,7 +1053,6 @@ git commit -m "feat(crawler): add programs parse pipeline"
 
 ```ts
 // ABOUTME: Discoverer interface — yields URLs to crawl as an async iterable.
-// ABOUTME: Implementations: sitemap.ts (real), enqueue.ts (stub for future recursive discovery).
 
 export interface Discoverer {
   discover(): AsyncIterable<URL>
@@ -1065,8 +1064,7 @@ export interface Discoverer {
 `apps/crawler/src/discover/enqueue.ts`:
 
 ```ts
-// ABOUTME: Stub for recursive enqueueLinks-based discovery.
-// ABOUTME: Throws on first call. Implementation deferred — see spec for context.
+// ABOUTME: Placeholder enqueueLinks-based Discoverer; throws NotImplementedError on call.
 
 import type { Discoverer } from './types'
 
