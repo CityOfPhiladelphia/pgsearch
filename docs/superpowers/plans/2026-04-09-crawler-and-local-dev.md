@@ -810,8 +810,7 @@ Expected: 5 tests pass. If a single assertion fails, fix the pipeline (or, for t
 Edit `apps/crawler/src/parse/index.ts` to add the import and the registry. The full file becomes:
 
 ```ts
-// ABOUTME: PIPELINE constants, pipelines registry, and the URL-to-pipeline-key router.
-// ABOUTME: Each pipeline produces a ParsedDocument from raw HTML or a Cheerio API.
+// ABOUTME: Pipeline registry and URL-to-pipeline-key router for the crawler.
 
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
@@ -828,7 +827,6 @@ export type PipelineKey = (typeof PIPELINE)[keyof typeof PIPELINE]
 
 export const pipelines: Partial<Record<PipelineKey, ParseFn>> = {
   [PIPELINE.SERVICES]: parseService,
-  // PIPELINE.PROGRAMS added in Task 9
 }
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
@@ -997,8 +995,7 @@ Expected end state: 5 tests pass.
 Edit `apps/crawler/src/parse/index.ts`. The full file becomes:
 
 ```ts
-// ABOUTME: PIPELINE constants, pipelines registry, and the URL-to-pipeline-key router.
-// ABOUTME: Each pipeline produces a ParsedDocument from raw HTML or a Cheerio API.
+// ABOUTME: Pipeline registry and URL-to-pipeline-key router for the crawler.
 
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
