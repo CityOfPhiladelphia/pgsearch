@@ -3,6 +3,7 @@
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
 import { parseService } from './services'
+import { parseProgram } from './programs'
 
 export type ParseFn = (input: string | CheerioAPI) => Promise<ParsedDocument>
 
@@ -13,8 +14,9 @@ export const PIPELINE = {
 
 export type PipelineKey = (typeof PIPELINE)[keyof typeof PIPELINE]
 
-export const pipelines: Partial<Record<PipelineKey, ParseFn>> = {
+export const pipelines: Record<PipelineKey, ParseFn> = {
   [PIPELINE.SERVICES]: parseService,
+  [PIPELINE.PROGRAMS]: parseProgram,
 }
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
