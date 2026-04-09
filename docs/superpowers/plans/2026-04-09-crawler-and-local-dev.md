@@ -1341,8 +1341,7 @@ Expected: 5 tests pass.
 `apps/crawler/src/discover/index.ts`:
 
 ```ts
-// ABOUTME: DISCOVER constants and the discoverers registry.
-// ABOUTME: Sitemap is real; enqueue is a stub that throws on first call.
+// ABOUTME: DISCOVER constants, the Discoverer type re-export, and named factory exports.
 
 export const DISCOVER = {
   SITEMAP: 'sitemap',
