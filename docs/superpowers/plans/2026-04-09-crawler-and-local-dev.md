@@ -1185,10 +1185,10 @@ function fakeFetch(): typeof fetch {
 
 const PHILA_LEAF_FILTER = (url: URL): boolean => {
   const p = url.pathname
-  // Services leaves: /services/<category>/.../<leaf>/ — at least 3 path segments after /services/
+  // Services leaves: /services/<category>/<leaf>/ — at least 3 total path segments
   if (p.startsWith('/services/')) {
     const segments = p.split('/').filter(Boolean) // ['services', ...]
-    return segments.length >= 4
+    return segments.length >= 3
   }
   // Programs leaves: /programs/<leaf>/ — exactly 2 path segments
   if (p.startsWith('/programs/')) {
@@ -1647,7 +1647,7 @@ const PHILA_LEAF_FILTER = (url: URL): boolean => {
   const p = url.pathname
   if (p.startsWith('/services/')) {
     const segments = p.split('/').filter(Boolean)
-    return segments.length >= 4
+    return segments.length >= 3
   }
   if (p.startsWith('/programs/')) {
     const segments = p.split('/').filter(Boolean)
