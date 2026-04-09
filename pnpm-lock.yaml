@@ -23,9 +23,6 @@ importers:
 
   apps/api:
     dependencies:
-      '@hono/node-server':
-        specifier: ^1.13.0
-        version: 1.19.13(hono@4.12.11)
       '@phila/db-postgres':
         specifier: ^0.0.8
         version: 0.0.8
@@ -45,6 +42,9 @@ importers:
         specifier: ^0.2.0
         version: 0.2.1
     devDependencies:
+      '@hono/node-server':
+        specifier: ^1.13.0
+        version: 1.19.13(hono@4.12.11)
       '@phila/search-parse':
         specifier: workspace:*
         version: link:../../packages/parse

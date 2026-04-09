@@ -271,7 +271,7 @@ path activates only when that var is missing."
 
 - [ ] **Step 1: Add `@hono/node-server` to `apps/api/package.json`**
 
-In the `dependencies` block, add (alphabetical order, near `hono`):
+In the `devDependencies` block, add (alphabetical order, before `@phila/search-parse`):
 
 ```json
 "@hono/node-server": "^1.13.0",
