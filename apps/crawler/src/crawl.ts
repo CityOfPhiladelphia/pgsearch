@@ -147,7 +147,14 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     await crawler.addRequests(options.seeds.map(url => ({ url })))
     await crawler.run()
   } finally {
-    await requestQueue.drop()
+    // Quiet Crawlee's post-abort cleanup chatter so it doesn't pollute the summary output.
+    // Drop is best-effort cleanup: errors are LOGGED with [crawl] prefix, not silently swallowed.
+    log.setLevel(LogLevel.OFF)
+    try {
+      await requestQueue.drop()
+    } catch (err) {
+      console.error('[crawl] queue cleanup error (non-fatal):', (err as Error).message)
+    }
   }
 
   return {
