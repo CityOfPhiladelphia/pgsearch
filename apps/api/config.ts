@@ -15,7 +15,10 @@ export const DEFAULT_CONFIG: IndexConfig = {
   bm25_k1: 1.2,
   bm25_b: 0.75,
   field_weights: { title: 3.0, body: 1.0 },
-  blend_alpha: 0.6,
+  rrf_k: 60,
+  rrf_weights: { bm25: 1.0, vector: 1.0 },
+  min_bm25_score: 0,
+  min_vector_score: 0,
   max_segment_tokens: 500,
   max_segments_per_document: 100,
   refresh_threshold: 100,
@@ -32,6 +35,10 @@ export function mergeConfig(overrides: Partial<IndexConfig>, base: IndexConfig =
     field_weights: {
       ...(base.field_weights || DEFAULT_CONFIG.field_weights),
       ...(overrides.field_weights || {}),
+    },
+    rrf_weights: {
+      ...(base.rrf_weights || DEFAULT_CONFIG.rrf_weights),
+      ...(overrides.rrf_weights || {}),
     },
   }
 }

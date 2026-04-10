@@ -31,7 +31,7 @@ describe('indexes service', () => {
     const index = await getIndex(pool, 'defaults-test')
     expect(index).not.toBeNull()
     expect(index!.config.bm25_k1).toBe(1.2)
-    expect(index!.config.blend_alpha).toBe(0.6)
+    expect(index!.config.rrf_k).toBe(60)
   })
 
   it('rejects duplicate index names', async () => {

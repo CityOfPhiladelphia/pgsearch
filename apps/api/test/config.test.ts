@@ -10,7 +10,8 @@ describe('config', () => {
     expect(config.bm25_k1).toBe(1.2)
     expect(config.bm25_b).toBe(0.75)
     expect(config.field_weights).toEqual({ title: 3.0, body: 1.0 })
-    expect(config.blend_alpha).toBe(0.6)
+    expect(config.rrf_k).toBe(60)
+    expect(config.rrf_weights).toEqual({ bm25: 1.0, vector: 1.0 })
     expect(config.max_segment_tokens).toBe(500)
     expect(config.max_segments_per_document).toBe(100)
     expect(config.refresh_threshold).toBe(100)
@@ -18,9 +19,9 @@ describe('config', () => {
   })
 
   it('merges partial overrides with defaults', () => {
-    const config = mergeConfig({ bm25_k1: 1.5, blend_alpha: 0.8 })
+    const config = mergeConfig({ bm25_k1: 1.5, rrf_k: 30 })
     expect(config.bm25_k1).toBe(1.5)
-    expect(config.blend_alpha).toBe(0.8)
+    expect(config.rrf_k).toBe(30)
     expect(config.bm25_b).toBe(0.75) // default preserved
   })
 
@@ -39,6 +40,14 @@ describe('config', () => {
     expect(config.embedding.provider).toBe('bedrock')
     expect(config.embedding.model).toBe('all-MiniLM-L6-v2') // default preserved
     expect(config.embedding.dimensions).toBe(384) // default preserved
+  })
+
+  it('merges partial rrf_weights preserving defaults', () => {
+    const config = mergeConfig({
+      rrf_weights: { bm25: 2.0 } as any
+    })
+    expect(config.rrf_weights.bm25).toBe(2.0)
+    expect(config.rrf_weights.vector).toBe(1.0) // default preserved
   })
 
   it('merges partial field_weights preserving defaults', () => {
