@@ -3,7 +3,7 @@
 
 import { Hono } from 'hono'
 import { searchAuth } from '../middleware/auth'
-import { hybridSearch } from '../services/search'
+import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
 import { getAdapter } from '../services/adapter'
@@ -24,10 +24,16 @@ searchRoutes.get('/public/search/:name', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
   }
 
+  const modeParam = c.req.query('mode') as SearchMode | undefined
+  const validModes: SearchMode[] = ['hybrid', 'bm25', 'semantic']
+  if (modeParam && !validModes.includes(modeParam)) {
+    return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
+  }
+
   const index = c.get('index')
   const pool = await getPool()
   const adapter = getAdapter(index.config)
 
-  const results = await hybridSearch(pool, index.index_id, adapter, q.trim(), { limit })
+  const results = await hybridSearch(pool, index.index_id, adapter, q.trim(), { limit, mode: modeParam })
   return c.json(results, 200)
 })

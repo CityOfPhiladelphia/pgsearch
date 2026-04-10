@@ -28,8 +28,11 @@ interface BM25Candidate {
   metadata: Record<string, unknown>
 }
 
+export type SearchMode = 'hybrid' | 'bm25' | 'semantic'
+
 export interface HybridSearchOptions {
   limit?: number
+  mode?: SearchMode
 }
 
 export async function vectorCandidates(
@@ -93,6 +96,9 @@ export async function hybridSearch(
   options: HybridSearchOptions = {},
 ): Promise<SearchResponse> {
   const limit = options.limit ?? 10
+  const mode = options.mode ?? 'hybrid'
+  const runBm25 = mode !== 'semantic'
+  const runVector = mode !== 'bm25'
 
   // Load index config and statistics
   const indexRow = await pool.query(
@@ -115,19 +121,24 @@ export async function hybridSearch(
   const fieldWeights = config.field_weights ?? { title: 3.0, body: 1.0 }
   const blendAlpha: number = config.blend_alpha ?? 0.6
 
-  // Parse the query into a tsquery
-  const tsqueryResult = await pool.query(
-    `SELECT plainto_tsquery($1, $2) AS tsquery`,
-    [textSearchConfig, queryText],
-  )
-  const tsquery = tsqueryResult.rows[0].tsquery
-
-  // Stem query terms to match stored lexemes
-  const queryTerms = await stemQueryTerms(pool, queryText, textSearchConfig)
+  // Parse tsquery and stem terms (only needed for BM25 pass)
+  let tsquery: string | null = null
+  let queryTerms: string[] = []
+  if (runBm25) {
+    const [tsqueryResult, terms] = await Promise.all([
+      pool.query(
+        `SELECT plainto_tsquery($1, $2) AS tsquery`,
+        [textSearchConfig, queryText],
+      ),
+      stemQueryTerms(pool, queryText, textSearchConfig),
+    ])
+    tsquery = tsqueryResult.rows[0].tsquery
+    queryTerms = terms
+  }
 
   // Run BM25F and vector passes concurrently
   const [bm25Rows, embeddingResults] = await Promise.all([
-    tsquery
+    runBm25 && tsquery
       ? pool.query(
           `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.body_tsvector,
                   d.title, d.external_id, d.title_tsvector, d.title_length, d.metadata
@@ -139,15 +150,19 @@ export async function hybridSearch(
           [indexId, tsquery],
         )
       : Promise.resolve({ rows: [] }),
-    adapter.embed([queryText]),
+    runVector
+      ? adapter.embed([queryText])
+      : Promise.resolve([] as number[][]),
   ])
 
-  const queryEmbedding = embeddingResults[0]
-  const vectorResults = await vectorCandidates(pool, indexId, queryEmbedding, 200)
+  let vectorResults: VectorCandidate[] = []
+  if (runVector && embeddingResults.length > 0) {
+    vectorResults = await vectorCandidates(pool, indexId, embeddingResults[0], 200)
+  }
 
-  // Look up document frequencies for query terms
+  // Look up document frequencies for query terms (only needed for BM25 pass)
   const dfMap = new Map<string, number>()
-  if (queryTerms.length > 0) {
+  if (runBm25 && queryTerms.length > 0) {
     const dfResult = await pool.query(
       `SELECT term, document_frequency
        FROM term_document_frequencies
@@ -251,17 +266,23 @@ export async function hybridSearch(
 
   const segments = Array.from(segmentMap.values())
 
-  // Normalize scores independently
+  // Normalize and blend scores based on search mode
   const bm25Scores = segments.map(s => s.bm25Score)
   const vectorScores = segments.map(s => s.vectorScore)
   const normalizedBm25 = normalizeScores(bm25Scores)
   const normalizedVector = normalizeScores(vectorScores)
 
-  // Blend scores and attach to segments
-  const scored = segments.map((s, i) => ({
-    ...s,
-    blendedScore: blendAlpha * normalizedBm25[i] + (1 - blendAlpha) * normalizedVector[i],
-  }))
+  const scored = segments.map((s, i) => {
+    let blendedScore: number
+    if (mode === 'bm25') {
+      blendedScore = normalizedBm25[i]
+    } else if (mode === 'semantic') {
+      blendedScore = normalizedVector[i]
+    } else {
+      blendedScore = blendAlpha * normalizedBm25[i] + (1 - blendAlpha) * normalizedVector[i]
+    }
+    return { ...s, blendedScore }
+  })
 
   // Deduplicate: keep the highest-scoring segment per document
   const bestByDoc = new Map<string, typeof scored[0]>()

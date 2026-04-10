@@ -96,4 +96,44 @@ describe('search', () => {
       expect(results.query).toBe('xyzzynonexistent')
     })
   })
+
+  describe('search mode', () => {
+    it('mode=bm25 returns only keyword matches', async () => {
+      // "parking permit" has BM25 matches, so should return results
+      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'bm25' })
+      expect(results.results.length).toBeGreaterThan(0)
+      expect(results.query).toBe('parking permit')
+    })
+
+    it('mode=bm25 returns empty for queries with no keyword matches', async () => {
+      // Nonsense query has no tsvector matches — BM25-only should return nothing
+      const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'bm25' })
+      expect(results.results).toEqual([])
+      expect(results.total).toBe(0)
+    })
+
+    it('mode=semantic returns results even without keyword matches', async () => {
+      // Vector similarity still finds results for queries with no keyword match
+      const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'semantic' })
+      expect(results.results.length).toBeGreaterThan(0)
+    })
+
+    it('mode=semantic scores use only vector similarity', async () => {
+      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'semantic' })
+      expect(results.results.length).toBeGreaterThan(0)
+      // All scores should be between 0 and 1 (normalized vector similarity)
+      for (const r of results.results) {
+        expect(r.score).toBeGreaterThanOrEqual(0)
+        expect(r.score).toBeLessThanOrEqual(1)
+      }
+    })
+
+    it('defaults to hybrid when mode is not specified', async () => {
+      const hybrid = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
+      const explicit = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'hybrid' })
+      // Same behavior — both return results with blended scores
+      expect(hybrid.results.length).toBe(explicit.results.length)
+      expect(hybrid.results[0].score).toBeCloseTo(explicit.results[0].score, 5)
+    })
+  })
 })

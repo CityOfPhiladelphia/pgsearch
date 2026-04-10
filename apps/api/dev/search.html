@@ -13,6 +13,7 @@
   .config input { width: 100%; padding: 0.4rem; box-sizing: border-box; font-family: inherit; font-size: 13px; }
   form.search { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
   form.search input[type=search] { flex: 1; padding: 0.6rem; font-size: 14px; }
+  form.search select { padding: 0.6rem; font-size: 14px; }
   form.search button { padding: 0.6rem 1rem; font-size: 14px; cursor: pointer; }
   .result { padding: 1rem 0; border-top: 1px solid #e4e4e4; }
   .result h3 { margin: 0 0 0.3rem; font-size: 1rem; }
@@ -37,6 +38,11 @@
 
 <form class="search" onsubmit="event.preventDefault(); runSearch();">
   <input type="search" id="q" placeholder="Search…" autofocus>
+  <select id="mode">
+    <option value="hybrid">hybrid</option>
+    <option value="bm25">bm25</option>
+    <option value="semantic">semantic</option>
+  </select>
   <button type="submit">Search</button>
 </form>
 
@@ -47,10 +53,11 @@
   const $indexName = document.getElementById('index-name');
   const $searchKey = document.getElementById('search-key');
   const $q = document.getElementById('q');
+  const $mode = document.getElementById('mode');
   const $results = document.getElementById('results');
 
   // Restore from localStorage
-  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$searchKey, 'searchKey']]) {
+  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$searchKey, 'searchKey'], [$mode, 'mode']]) {
     const saved = localStorage.getItem('pgsearch:' + key);
     if (saved) el.value = saved;
     el.addEventListener('input', () => localStorage.setItem('pgsearch:' + key, el.value));
@@ -64,7 +71,8 @@
     const key = $searchKey.value;
     $results.innerHTML = '<div class="empty">searching…</div>';
     try {
-      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20`, {
+      const mode = $mode.value;
+      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`, {
         headers: { 'x-search-key': key },
       });
       if (!res.ok) {
