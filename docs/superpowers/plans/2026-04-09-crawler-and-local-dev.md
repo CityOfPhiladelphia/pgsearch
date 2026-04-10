@@ -1048,9 +1048,7 @@ git commit -m "feat(crawler): add programs parse pipeline"
 
 ## Task 10: Define `Discoverer` interface and the `enqueueDiscoverer` stub
 
-**Files:**
-- Create: `apps/crawler/src/discover/types.ts`
-- Create: `apps/crawler/src/discover/enqueue.ts`
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
 
 - [ ] **Step 1: Create the interface file**
 
@@ -1087,11 +1085,7 @@ git commit -m "feat(crawler): add Discoverer interface and enqueue stub"
 
 ## Task 11: TDD `sitemapDiscoverer`
 
-**Files:**
-- Create: `apps/crawler/test/fixtures/sitemap-snippet.xml`
-- Create: `apps/crawler/test/discover-sitemap.test.ts`
-- Create: `apps/crawler/src/discover/sitemap.ts`
-- Create: `apps/crawler/src/discover/index.ts`
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
 
 - [ ] **Step 1: Build the sitemap fixture**
 
@@ -1884,6 +1878,8 @@ If nothing changed, this step is a no-op.
 
 ## Task 16: Implement `createEnqueueDiscoverer` for recursive URL discovery
 
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
+
 **Motivation:** The Task 15 smoke test surfaced that phila.gov's sitemap is incomplete — for the `/services/` URL space, it lists ~60 leaves while recursive crawling finds ~150-200. For example, the `water-gas-utilities` category links to 25 service URLs, only 17 of which appear in the sitemap. The `enqueueDiscoverer` stub from Task 10 was deferred to here.
 
 **Files modified:**
@@ -1904,6 +1900,46 @@ If nothing changed, this step is a no-op.
 - [x] **Step 6:** `pnpm --filter @phila/search-crawler test` → 28 tests passing
 - [x] **Step 7:** Commit
 - [x] **Step 8 (bugfix):** Queue isolation — both `createEnqueueDiscoverer` and the `crawl` orchestrator now open named `RequestQueue` instances (dropped in `finally`) so they never share Crawlee's default persistent queue. Surfaced by the Task 16 smoke test: discoverer walked 904 URLs, marked them handled in the default queue, then the orchestrator opened the same queue and exited with Fetched: 0.
+
+---
+
+## Task 17: Refactor to single-Crawlee enqueue-only architecture
+
+**Motivation:** The dual-Crawlee architecture (sitemap discoverer + main orchestrator) double-fetched every page and required two named request queues to avoid Crawlee's dedup. Worse, the sitemap was unreliable: ~25 of 60 entries were stale 404s, and many real services pages were missing from the sitemap entirely. The `createEnqueueDiscoverer` from Task 16 solved the coverage problem but kept the dual-Crawlee waste. This task collapses both Crawlee instances into one.
+
+**Architecture change:** No more Discoverer abstraction. `pipelineKeyFor` becomes the canonical leaf predicate, extended with segment-count filtering (≥3 segments for services, exactly 2 for programs). A single `CheerioCrawler` seeds from caller-supplied URLs and uses `enqueueLinks` inside its own request handler to walk the link graph. Category and intermediate pages are walked but not parsed. The CLI takes repeatable `--seed` flags instead of `--sitemap` and `--discover`.
+
+**Files deleted:**
+- `apps/crawler/src/discover/types.ts`
+- `apps/crawler/src/discover/sitemap.ts`
+- `apps/crawler/src/discover/enqueue.ts`
+- `apps/crawler/src/discover/index.ts`
+- `apps/crawler/test/discover-sitemap.test.ts`
+- `apps/crawler/test/discover-enqueue.test.ts`
+- `apps/crawler/test/fixtures/sitemap-snippet.xml`
+
+**Files modified:**
+- `apps/crawler/src/parse/index.ts` — `pipelineKeyFor` gains segment-count filter; returns `null` for roots and intermediates
+- `apps/crawler/test/route.test.ts` — 5 new segment-count cases; 4 original cases updated
+- `apps/crawler/src/crawl.ts` — `CrawlOptions.discoverer` replaced with `seeds: string[]`; `discovered` counter removed; single `CheerioCrawler` with `enqueueLinks` in request handler
+- `apps/crawler/src/cli.ts` — `--sitemap`, `--discover` flags removed; `--seed` (repeatable, required) replaces them; `PHILA_LEAF_FILTER` constant removed (logic is in `pipelineKeyFor`)
+- `package.json` (root) — `dev:crawl` uses `--seed` flags instead of `--sitemap`
+
+**Test count:** 28 → 18 tests (discover tests gone; 8 route tests + 5 services + 5 programs).
+
+**Smoke test result:** Fetched: 35, Parsed: 11, Ingested: 11, Failed: 0, Duration: ~2s (with `--limit 10`). Search for "water bill" returns results. Known noise: after abort, Crawlee logs WARN/ERROR about the dropped queue while reclaiming in-flight requests — functional correctness is unaffected (exit 0, data ingested).
+
+- [x] **Step 1:** Delete `apps/crawler/src/discover/` directory and all files within it
+- [x] **Step 2:** Delete discover tests and sitemap fixture
+- [x] **Step 3:** Update `pipelineKeyFor` with segment-count rules
+- [x] **Step 4:** Update `route.test.ts` with new segment-count cases
+- [x] **Step 5:** Rewrite `crawl.ts` — single CheerioCrawler with seeds + `enqueueLinks`
+- [x] **Step 6:** Rewrite `cli.ts` — seed-only flags
+- [x] **Step 7:** Update root `package.json` `dev:crawl` script
+- [x] **Step 8:** `pnpm --filter @phila/search-crawler exec tsc --noEmit` → clean
+- [x] **Step 9:** `pnpm --filter @phila/search-crawler test` → 18 tests passing
+- [x] **Step 10:** Manual smoke test → ingested 11, failed 0, search returns results
+- [x] **Step 11:** Commit
 
 ---
 

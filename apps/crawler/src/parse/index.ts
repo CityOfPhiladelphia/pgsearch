@@ -26,7 +26,8 @@ export function pipelineKeyFor(url: string): PipelineKey | null {
   } catch {
     return null
   }
-  if (path.startsWith('/services/')) return PIPELINE.SERVICES
-  if (path.startsWith('/programs/')) return PIPELINE.PROGRAMS
+  const segments = path.split('/').filter(Boolean)
+  if (segments[0] === 'services' && segments.length >= 3) return PIPELINE.SERVICES
+  if (segments[0] === 'programs' && segments.length === 2) return PIPELINE.PROGRAMS
   return null
 }

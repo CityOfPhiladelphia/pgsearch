@@ -1,14 +1,13 @@
-// ABOUTME: Crawl orchestrator — wires Discoverer, parse pipelines, and HTTP sink to a CheerioCrawler.
-// ABOUTME: Single straight pipe per page; no persisted state. --limit counts successful ingests.
+// ABOUTME: Crawl orchestrator — wires seeds, link expansion, parse pipelines, and HTTP sink to a CheerioCrawler.
+// ABOUTME: Single Crawlee instance walks the link graph from seeds. --limit counts successful ingests.
 
 import { CheerioCrawler, log, LogLevel, RequestQueue } from 'crawlee'
-import type { Discoverer } from './discover'
 import { pipelines, pipelineKeyFor } from './parse'
 import type { SinkConfig } from './sink/http'
 import { postDocument, SinkError } from './sink/http'
 
 export interface CrawlOptions {
-  discoverer: Discoverer
+  seeds: string[]
   sink: SinkConfig
   userAgent: string
   maxConcurrency?: number
@@ -18,7 +17,6 @@ export interface CrawlOptions {
 }
 
 export interface CrawlSummary {
-  discovered: number
   fetched: number
   parsed: number
   ingested: number
@@ -27,10 +25,10 @@ export interface CrawlSummary {
 }
 
 export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
-  log.setLevel(LogLevel.WARNING) // Crawlee is chatty by default; let our own logs lead.
+  log.setLevel(LogLevel.WARNING)
 
+  // `limit` is a soft cap — concurrent handlers may overshoot by up to maxConcurrency-1.
   const counters = {
-    discovered: 0,
     fetched: 0,
     parsed: 0,
     ingested: 0,
@@ -38,10 +36,25 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
   }
   const start = Date.now()
   let stopRequested = false
-  // `limit` is a soft cap — concurrent handlers may overshoot by up to maxConcurrency-1.
+
+  if (options.seeds.length === 0) {
+    throw new Error('crawl: at least one seed URL is required')
+  }
+
+  // Pre-compute walk constraints from the seeds. We follow same-hostname links
+  // whose path starts with any of the seed paths.
+  const seedUrls = options.seeds.map(s => new URL(s))
+  const seedHostname = seedUrls[0].hostname
+  for (const u of seedUrls) {
+    if (u.hostname !== seedHostname) {
+      throw new Error(`crawl: all seeds must share the same hostname (saw ${seedHostname} and ${u.hostname})`)
+    }
+  }
+  const seedPaths = seedUrls.map(u => u.pathname)
 
   const queueName = `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const requestQueue = await RequestQueue.open(queueName)
+
   const crawler = new CheerioCrawler({
     requestQueue,
     maxConcurrency: options.maxConcurrency ?? 4,
@@ -50,16 +63,15 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     additionalMimeTypes: ['text/html'],
     preNavigationHooks: [
       async (_ctx, gotOptions) => {
-        // Crawlee uses got under the hood for CheerioCrawler.
         gotOptions.headers = { ...gotOptions.headers, 'user-agent': options.userAgent }
       },
     ],
-    requestHandler: async ({ request, response, $ }) => {
+    requestHandler: async ({ request, response, $, enqueueLinks }) => {
       counters.fetched++
       if (stopRequested) return
 
-      // Crawlee passes 4xx/5xx HTML bodies through to the success handler.
-      // Treat anything outside 2xx as a failed fetch and skip parsing.
+      // Crawlee passes 4xx HTML bodies to the success handler by default.
+      // Treat anything outside 2xx as a failed fetch.
       const status = response?.statusCode
       if (status != null && (status < 200 || status >= 300)) {
         console.error(`[fetch] non-2xx for ${request.url}: ${status}`)
@@ -67,12 +79,29 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
         return
       }
 
-      // Use the final URL after redirects for routing and document identity.
+      // Expand the queue with same-hostname links under any seed path.
+      // We walk MORE than the leaf filter (e.g. category roots) so we can find
+      // the leaves they link to.
+      await enqueueLinks({
+        strategy: 'same-hostname',
+        transformRequestFunction: (req) => {
+          try {
+            const u = new URL(req.url)
+            if (u.hostname !== seedHostname) return false
+            const underSeed = seedPaths.some(p => u.pathname.startsWith(p))
+            if (!underSeed) return false
+            return req
+          } catch {
+            return false
+          }
+        },
+      })
+
+      // Decide whether to parse and ingest THIS page.
       const finalUrl = request.loadedUrl ?? request.url
       const key = pipelineKeyFor(finalUrl)
       if (!key) {
-        // Defensive — sitemap filter should already exclude. Post-redirect
-        // URLs that don't match any pipeline are silently skipped.
+        // Page is walked (links extracted above) but not parsed.
         return
       }
 
@@ -115,13 +144,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
   })
 
   try {
-    // Drain the discoverer into the crawler queue, then run.
-    for await (const url of options.discoverer.discover()) {
-      counters.discovered++
-      await crawler.addRequests([{ url: url.toString() }])
-    }
-    console.log(`[discover] enqueued ${counters.discovered} URLs`)
-
+    await crawler.addRequests(options.seeds.map(url => ({ url })))
     await crawler.run()
   } finally {
     await requestQueue.drop()
@@ -136,10 +159,9 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
 export function printSummary(summary: CrawlSummary): void {
   const seconds = (summary.durationMs / 1000).toFixed(1)
   console.log(``)
-  console.log(`[summary] Discovered: ${summary.discovered}`)
-  console.log(`[summary] Fetched:    ${summary.fetched}`)
-  console.log(`[summary] Parsed:     ${summary.parsed}`)
-  console.log(`[summary] Ingested:   ${summary.ingested}`)
-  console.log(`[summary] Failed:     ${summary.failed}`)
-  console.log(`[summary] Duration:   ${seconds}s`)
+  console.log(`[summary] Fetched:   ${summary.fetched}`)
+  console.log(`[summary] Parsed:    ${summary.parsed}`)
+  console.log(`[summary] Ingested:  ${summary.ingested}`)
+  console.log(`[summary] Failed:    ${summary.failed}`)
+  console.log(`[summary] Duration:  ${seconds}s`)
 }
