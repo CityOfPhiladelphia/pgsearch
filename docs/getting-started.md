@@ -101,7 +101,7 @@ Response:
   "results": [
     {
       "external_id": "page-001",
-      "score": 0.847,
+      "score": 0.033,
       "title": "Apply for a Parking Permit",
       "snippet": "You can apply for a residential parking permit online...",
       "metadata": {"source_url": "https://example.com/parking", "content_type": "services"}
