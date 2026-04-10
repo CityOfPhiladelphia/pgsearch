@@ -109,3 +109,9 @@ export interface ApiError {
     message: string
   }
 }
+
+export type AppEnv = {
+  Variables: {
+    index: SearchIndex
+  }
+}

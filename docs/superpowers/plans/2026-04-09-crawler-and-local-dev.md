@@ -271,7 +271,7 @@ path activates only when that var is missing."
 
 - [ ] **Step 1: Add `@hono/node-server` to `apps/api/package.json`**
 
-In the `dependencies` block, add (alphabetical order, near `hono`):
+In the `devDependencies` block, add (alphabetical order, before `@phila/search-parse`):
 
 ```json
 "@hono/node-server": "^1.13.0",
@@ -656,8 +656,7 @@ Expected: failure — "Failed to resolve import" or similar, because `apps/crawl
 `apps/crawler/src/parse/index.ts`:
 
 ```ts
-// ABOUTME: PIPELINE constants and the URL-to-pipeline-key router.
-// ABOUTME: The pipelines registry is added by Tasks 8 and 9 once the parse functions exist.
+// ABOUTME: Routes URLs to their content-type pipeline by path prefix.
 
 export const PIPELINE = {
   SERVICES: 'services',
@@ -667,7 +666,12 @@ export const PIPELINE = {
 export type PipelineKey = (typeof PIPELINE)[keyof typeof PIPELINE]
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
-  const path = new URL(url).pathname
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return null
+  }
   if (path.startsWith('/services/')) return PIPELINE.SERVICES
   if (path.startsWith('/programs/')) return PIPELINE.PROGRAMS
   return null
@@ -715,39 +719,40 @@ If the file doesn't exist at that path, run `find packages/parse/test/fixtures -
 // ABOUTME: End-to-end test of the services parse pipeline against a cached phila.gov fixture.
 // ABOUTME: Validates title, metadata, and body content for a real services page.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import type { ParsedDocument } from '@phila/search-parse'
 import { parseService } from '../src/parse/services'
 
 describe('parseService', () => {
   const html = readFileSync(join(__dirname, 'fixtures/pay-water-bill.html'), 'utf-8')
+  let doc: ParsedDocument
 
-  it('extracts the title', async () => {
-    const doc = await parseService(html)
+  beforeAll(async () => {
+    doc = await parseService(html)
+  })
+
+  it('extracts the title', () => {
     expect(doc.title).toBe('Pay a water bill')
   })
 
-  it('extracts standard metadata', async () => {
-    const doc = await parseService(html)
+  it('extracts standard metadata', () => {
     expect(doc.metadata.description).toBe('Instructions and fees for accessing and paying your water and sewer services bill.')
     expect(doc.metadata.canonical_url).toBe('https://www.phila.gov/services/water-gas-utilities/pay-or-dispute-a-water-bill/pay-a-water-bill/')
     expect(doc.metadata.og_site_name).toBe('City of Philadelphia')
   })
 
-  it('extracts content_type from the swiftype meta tag', async () => {
-    const doc = await parseService(html)
-    expect(doc.metadata.content_type).toBe('service')
+  it('extracts content_type from the swiftype meta tag', () => {
+    expect(doc.metadata.content_type).toBe('service_page')
   })
 
-  it('produces markdown body with substantive content', async () => {
-    const doc = await parseService(html)
+  it('produces markdown body with substantive content', () => {
     expect(doc.body.length).toBeGreaterThan(500)
     expect(doc.body.toLowerCase()).toContain('water bill')
   })
 
-  it('strips navigation and footer text', async () => {
-    const doc = await parseService(html)
+  it('strips navigation and footer text', () => {
     expect(doc.body).not.toContain('Skip to main content')
     expect(doc.body).not.toContain('Open government')
   })
@@ -776,7 +781,7 @@ Expected: failure — module `'../src/parse/services'` not found.
 
 ```ts
 // ABOUTME: Parse pipeline for phila.gov services pages.
-// ABOUTME: Targets the WordPress entry-content template (.entry-header h2 + .entry-content).
+// ABOUTME: Targets the page title in .entry-header h2 and body in .entry-content.
 
 import {
   pipeline,
@@ -811,8 +816,7 @@ Expected: 5 tests pass. If a single assertion fails, fix the pipeline (or, for t
 Edit `apps/crawler/src/parse/index.ts` to add the import and the registry. The full file becomes:
 
 ```ts
-// ABOUTME: PIPELINE constants, pipelines registry, and the URL-to-pipeline-key router.
-// ABOUTME: Each pipeline produces a ParsedDocument from raw HTML or a Cheerio API.
+// ABOUTME: Pipeline registry and URL-to-pipeline-key router for the crawler.
 
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
@@ -829,7 +833,6 @@ export type PipelineKey = (typeof PIPELINE)[keyof typeof PIPELINE]
 
 export const pipelines: Partial<Record<PipelineKey, ParseFn>> = {
   [PIPELINE.SERVICES]: parseService,
-  // PIPELINE.PROGRAMS added in Task 9
 }
 
 export function pipelineKeyFor(url: string): PipelineKey | null {
@@ -894,40 +897,39 @@ Expected: `<meta class="swiftype" name="content_type" data-type="string" content
 // ABOUTME: End-to-end test of the programs parse pipeline against a cached phila.gov fixture.
 // ABOUTME: Validates title, metadata, and body content for a real programs page.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import type { ParsedDocument } from '@phila/search-parse'
 import { parseProgram } from '../src/parse/programs'
 
 describe('parseProgram', () => {
   const html = readFileSync(join(__dirname, 'fixtures/camp-philly.html'), 'utf-8')
+  let doc: ParsedDocument
 
-  it('extracts the title from the hero header', async () => {
-    const doc = await parseProgram(html)
+  beforeAll(async () => {
+    doc = await parseProgram(html)
+  })
+
+  it('extracts the title from the hero header', () => {
     expect(doc.title).toBe('Camp Philly')
   })
 
-  it('extracts content_type from the swiftype meta tag', async () => {
-    const doc = await parseProgram(html)
+  it('extracts content_type from the swiftype meta tag', () => {
     expect(doc.metadata.content_type).toBe('programs')
   })
 
-  it('extracts the canonical URL', async () => {
-    const doc = await parseProgram(html)
-    // Either link[rel=canonical] or og:url. Confirm whichever the page provides.
-    expect(typeof doc.metadata.canonical_url).toBe('string')
-    expect((doc.metadata.canonical_url as string)).toContain('/programs/camp-philly')
+  it('extracts the canonical URL', () => {
+    expect(doc.metadata.canonical_url).toBe('https://www.phila.gov/programs/camp-philly/')
   })
 
-  it('produces markdown body with substantive content', async () => {
-    const doc = await parseProgram(html)
-    expect(doc.body.length).toBeGreaterThan(300)
+  it('produces markdown body with substantive content', () => {
+    expect(doc.body.length).toBeGreaterThan(2500)
     // Content known to be on the page from spec validation.
     expect(doc.body.toLowerCase()).toMatch(/sleep[- ]away|camp speers|recreation/)
   })
 
-  it('strips global navigation and footer text', async () => {
-    const doc = await parseProgram(html)
+  it('strips global navigation and footer text', () => {
     expect(doc.body).not.toContain('Skip to main content')
     expect(doc.body).not.toContain('Open government')
   })
@@ -998,8 +1000,7 @@ Expected end state: 5 tests pass.
 Edit `apps/crawler/src/parse/index.ts`. The full file becomes:
 
 ```ts
-// ABOUTME: PIPELINE constants, pipelines registry, and the URL-to-pipeline-key router.
-// ABOUTME: Each pipeline produces a ParsedDocument from raw HTML or a Cheerio API.
+// ABOUTME: Pipeline registry and URL-to-pipeline-key router for the crawler.
 
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
@@ -1047,9 +1048,7 @@ git commit -m "feat(crawler): add programs parse pipeline"
 
 ## Task 10: Define `Discoverer` interface and the `enqueueDiscoverer` stub
 
-**Files:**
-- Create: `apps/crawler/src/discover/types.ts`
-- Create: `apps/crawler/src/discover/enqueue.ts`
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
 
 - [ ] **Step 1: Create the interface file**
 
@@ -1057,33 +1056,15 @@ git commit -m "feat(crawler): add programs parse pipeline"
 
 ```ts
 // ABOUTME: Discoverer interface — yields URLs to crawl as an async iterable.
-// ABOUTME: Implementations: sitemap.ts (real), enqueue.ts (stub for future recursive discovery).
 
 export interface Discoverer {
   discover(): AsyncIterable<URL>
 }
 ```
 
-- [ ] **Step 2: Create the stub**
+- [ ] **Step 2: Create `apps/crawler/src/discover/enqueue.ts`**
 
-`apps/crawler/src/discover/enqueue.ts`:
-
-```ts
-// ABOUTME: Stub for recursive enqueueLinks-based discovery.
-// ABOUTME: Throws on first call. Implementation deferred — see spec for context.
-
-import type { Discoverer } from './types'
-
-export const enqueueDiscoverer: Discoverer = {
-  // eslint-disable-next-line require-yield
-  async *discover() {
-    throw new Error(
-      'NotImplementedError: enqueue-based discovery is not yet implemented. ' +
-      'See docs/superpowers/specs/2026-04-09-crawler-and-local-dev-design.md.'
-    )
-  },
-}
-```
+See Task 16 for the implementation.
 
 - [ ] **Step 3: Type-check the crawler package**
 
@@ -1104,11 +1085,7 @@ git commit -m "feat(crawler): add Discoverer interface and enqueue stub"
 
 ## Task 11: TDD `sitemapDiscoverer`
 
-**Files:**
-- Create: `apps/crawler/test/fixtures/sitemap-snippet.xml`
-- Create: `apps/crawler/test/discover-sitemap.test.ts`
-- Create: `apps/crawler/src/discover/sitemap.ts`
-- Create: `apps/crawler/src/discover/index.ts`
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
 
 - [ ] **Step 1: Build the sitemap fixture**
 
@@ -1175,28 +1152,27 @@ That's 14 entries: 5 services leaves, 3 programs leaves, 2 category roots (`/ser
 // ABOUTME: Tests for the sitemap-based URL discoverer.
 // ABOUTME: Validates XML parsing, URL filtering, and the async-iterable contract.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { createSitemapDiscoverer } from '../src/discover/sitemap'
 
 const sitemapXml = readFileSync(join(__dirname, 'fixtures/sitemap-snippet.xml'), 'utf-8')
 
-// The discoverer takes a fetch implementation so tests don't hit the network.
-function fakeFetch(): typeof fetch {
+function fakeFetch(body: string = sitemapXml, status: number = 200): typeof fetch {
   return (async (_url: string) => {
-    return new Response(sitemapXml, { status: 200, headers: { 'content-type': 'application/xml' } })
+    return new Response(body, { status, headers: { 'content-type': 'application/xml' } })
   }) as unknown as typeof fetch
 }
 
 const PHILA_LEAF_FILTER = (url: URL): boolean => {
   const p = url.pathname
-  // Services leaves: /services/<category>/.../<leaf>/ — at least 3 path segments after /services/
+  // Services leaves: /services/<category>/<leaf>/ — at least 3 total path segments
   if (p.startsWith('/services/')) {
-    const segments = p.split('/').filter(Boolean) // ['services', ...]
-    return segments.length >= 4
+    const segments = p.split('/').filter(Boolean)
+    return segments.length >= 3
   }
-  // Programs leaves: /programs/<leaf>/ — exactly 2 path segments
+  // Programs leaves: /programs/<leaf>/ — exactly 2 total path segments
   if (p.startsWith('/programs/')) {
     const segments = p.split('/').filter(Boolean)
     return segments.length === 2
@@ -1205,73 +1181,58 @@ const PHILA_LEAF_FILTER = (url: URL): boolean => {
 }
 
 describe('sitemapDiscoverer', () => {
-  it('yields URLs from the sitemap that match the filter', async () => {
+  let collected: string[] = []
+
+  beforeAll(async () => {
     const discoverer = createSitemapDiscoverer({
       url: 'https://www.phila.gov/sitemap.xml',
       filter: PHILA_LEAF_FILTER,
       fetch: fakeFetch(),
     })
-    const collected: string[] = []
     for await (const url of discoverer.discover()) {
       collected.push(url.toString())
     }
+  })
+
+  it('includes leaf service URLs', () => {
     expect(collected).toContain('https://www.phila.gov/services/water-gas-utilities/pay-or-dispute-a-water-bill/pay-a-water-bill/')
     expect(collected).toContain('https://www.phila.gov/services/parking/parking-permits/get-a-residential-parking-permit/')
+    expect(collected).toContain('https://www.phila.gov/services/birth-marriage-life-events/get-a-marriage-license/')
+  })
+
+  it('includes leaf program URLs', () => {
     expect(collected).toContain('https://www.phila.gov/programs/camp-philly/')
     expect(collected).toContain('https://www.phila.gov/programs/philly-counts/')
   })
 
-  it('excludes the services and programs category roots', async () => {
-    const discoverer = createSitemapDiscoverer({
-      url: 'https://www.phila.gov/sitemap.xml',
-      filter: PHILA_LEAF_FILTER,
-      fetch: fakeFetch(),
-    })
-    const collected: string[] = []
-    for await (const url of discoverer.discover()) {
-      collected.push(url.toString())
-    }
+  it('excludes the services and programs category roots', () => {
     expect(collected).not.toContain('https://www.phila.gov/services/')
     expect(collected).not.toContain('https://www.phila.gov/programs/')
   })
 
-  it('excludes intermediate services category pages', async () => {
-    const discoverer = createSitemapDiscoverer({
-      url: 'https://www.phila.gov/sitemap.xml',
-      filter: PHILA_LEAF_FILTER,
-      fetch: fakeFetch(),
-    })
-    const collected: string[] = []
-    for await (const url of discoverer.discover()) {
-      collected.push(url.toString())
-    }
+  it('excludes intermediate services category pages', () => {
     expect(collected).not.toContain('https://www.phila.gov/services/water-gas-utilities/')
   })
 
-  it('excludes unrelated paths (departments, news, root)', async () => {
-    const discoverer = createSitemapDiscoverer({
-      url: 'https://www.phila.gov/sitemap.xml',
-      filter: PHILA_LEAF_FILTER,
-      fetch: fakeFetch(),
-    })
-    const collected: string[] = []
-    for await (const url of discoverer.discover()) {
-      collected.push(url.toString())
-    }
+  it('excludes unrelated paths (departments, news, root)', () => {
     expect(collected).not.toContain('https://www.phila.gov/')
     expect(collected).not.toContain('https://www.phila.gov/departments/')
     expect(collected).not.toContain('https://www.phila.gov/news/some-press-release/')
   })
 
-  it('yields exactly the expected count', async () => {
+  it('yields exactly 5 services leaves + 3 programs leaves', () => {
+    expect(collected).toHaveLength(8)
+  })
+
+  it('throws on non-200 sitemap response', async () => {
     const discoverer = createSitemapDiscoverer({
       url: 'https://www.phila.gov/sitemap.xml',
       filter: PHILA_LEAF_FILTER,
-      fetch: fakeFetch(),
+      fetch: fakeFetch('not found', 404),
     })
-    let count = 0
-    for await (const _ of discoverer.discover()) count++
-    expect(count).toBe(8) // 5 services leaves + 3 programs leaves
+    await expect(async () => {
+      for await (const _ of discoverer.discover()) { /* consume */ }
+    }).rejects.toThrow(/sitemap fetch failed: 404/)
   })
 })
 ```
@@ -1347,8 +1308,7 @@ Expected: 5 tests pass.
 `apps/crawler/src/discover/index.ts`:
 
 ```ts
-// ABOUTME: DISCOVER constants and the discoverers registry.
-// ABOUTME: Sitemap is real; enqueue is a stub that throws on first call.
+// ABOUTME: DISCOVER constants, the Discoverer type re-export, and named factory exports.
 
 export const DISCOVER = {
   SITEMAP: 'sitemap',
@@ -1373,7 +1333,7 @@ This is a small drift from the spec but it's the right shape — singletons can'
 pnpm --filter @phila/search-crawler test
 ```
 
-Expected: 19 tests pass (4 route + 5 services + 5 programs + 5 sitemap).
+Expected: 21 tests pass (4 route + 5 services + 5 programs + 7 sitemap).
 
 - [ ] **Step 8: Commit**
 
@@ -1521,6 +1481,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
   }
   const start = Date.now()
   let stopRequested = false
+  // `limit` is a soft cap — concurrent handlers may overshoot by up to maxConcurrency-1.
 
   const crawler = new CheerioCrawler({
     maxConcurrency: options.maxConcurrency ?? 4,
@@ -1544,15 +1505,10 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       }
 
       const parse = pipelines[key]
-      if (!parse) {
-        console.error(`[parse] no pipeline for key ${key} (url: ${request.url})`)
-        counters.failed++
-        return
-      }
 
       let doc
       try {
-        doc = await parse($)
+        doc = await parse($.html())
         counters.parsed++
       } catch (err) {
         console.error(`[parse] failed for ${request.url}:`, (err as Error).stack ?? err)
@@ -1563,7 +1519,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
       try {
         await postDocument(options.sink, doc, request.url, key)
         counters.ingested++
-        if (options.limit && counters.ingested >= options.limit) {
+        if (options.limit != null && counters.ingested >= options.limit) {
           stopRequested = true
           console.log(`[summary] limit ${options.limit} reached; stopping`)
           await crawler.autoscaledPool?.abort()
@@ -1654,7 +1610,7 @@ const PHILA_LEAF_FILTER = (url: URL): boolean => {
   const p = url.pathname
   if (p.startsWith('/services/')) {
     const segments = p.split('/').filter(Boolean)
-    return segments.length >= 4
+    return segments.length >= 3
   }
   if (p.startsWith('/programs/')) {
     const segments = p.split('/').filter(Boolean)
@@ -1917,6 +1873,73 @@ git commit -m "fix(crawler): <what>"
 ```
 
 If nothing changed, this step is a no-op.
+
+---
+
+## Task 16: Implement `createEnqueueDiscoverer` for recursive URL discovery
+
+**Superseded by Task 17.** The Discoverer abstraction was dropped in favor of single-Crawlee enqueue-mode walking from seed URLs. See Task 17.
+
+**Motivation:** The Task 15 smoke test surfaced that phila.gov's sitemap is incomplete — for the `/services/` URL space, it lists ~60 leaves while recursive crawling finds ~150-200. For example, the `water-gas-utilities` category links to 25 service URLs, only 17 of which appear in the sitemap. The `enqueueDiscoverer` stub from Task 10 was deferred to here.
+
+**Files modified:**
+- `apps/crawler/src/discover/enqueue.ts` — replaced stub with `createEnqueueDiscoverer` factory
+- `apps/crawler/test/discover-enqueue.test.ts` — 6 TDD tests against injected fake fetch
+- `apps/crawler/src/discover/index.ts` — exports `createEnqueueDiscoverer` (stub singleton removed)
+- `apps/crawler/src/cli.ts` — added `--discover sitemap|enqueue` flag (default `sitemap`) and repeatable `--seed` flag
+
+**Description:** Replaces the Task 10 stub with a real recursive walker. Yields URLs matching a leaf filter by walking the link graph from caller-supplied seed URLs. Uses Crawlee's `enqueueLinks` in production; accepts an optional `fetch` injection for hermetic unit tests (same pattern as `createSitemapDiscoverer`). The CLI's default mode remains `sitemap`, keeping `pnpm dev:crawl` unchanged.
+
+**Test count:** 22 → 28 tests passing.
+
+- [x] **Step 1:** Write failing test (`apps/crawler/test/discover-enqueue.test.ts`)
+- [x] **Step 2:** Implement `createEnqueueDiscoverer` in `apps/crawler/src/discover/enqueue.ts`
+- [x] **Step 3:** Update `apps/crawler/src/discover/index.ts` — export factory, remove stub
+- [x] **Step 4:** Update `apps/crawler/src/cli.ts` — add `--discover` and `--seed` flags
+- [x] **Step 5:** `pnpm --filter @phila/search-crawler exec tsc --noEmit` → clean
+- [x] **Step 6:** `pnpm --filter @phila/search-crawler test` → 28 tests passing
+- [x] **Step 7:** Commit
+- [x] **Step 8 (bugfix):** Queue isolation — both `createEnqueueDiscoverer` and the `crawl` orchestrator now open named `RequestQueue` instances (dropped in `finally`) so they never share Crawlee's default persistent queue. Surfaced by the Task 16 smoke test: discoverer walked 904 URLs, marked them handled in the default queue, then the orchestrator opened the same queue and exited with Fetched: 0.
+
+---
+
+## Task 17: Refactor to single-Crawlee enqueue-only architecture
+
+**Motivation:** The dual-Crawlee architecture (sitemap discoverer + main orchestrator) double-fetched every page and required two named request queues to avoid Crawlee's dedup. Worse, the sitemap was unreliable: ~25 of 60 entries were stale 404s, and many real services pages were missing from the sitemap entirely. The `createEnqueueDiscoverer` from Task 16 solved the coverage problem but kept the dual-Crawlee waste. This task collapses both Crawlee instances into one.
+
+**Architecture change:** No more Discoverer abstraction. `pipelineKeyFor` becomes the canonical leaf predicate, extended with segment-count filtering (≥3 segments for services, exactly 2 for programs). A single `CheerioCrawler` seeds from caller-supplied URLs and uses `enqueueLinks` inside its own request handler to walk the link graph. Category and intermediate pages are walked but not parsed. The CLI takes repeatable `--seed` flags instead of `--sitemap` and `--discover`.
+
+**Files deleted:**
+- `apps/crawler/src/discover/types.ts`
+- `apps/crawler/src/discover/sitemap.ts`
+- `apps/crawler/src/discover/enqueue.ts`
+- `apps/crawler/src/discover/index.ts`
+- `apps/crawler/test/discover-sitemap.test.ts`
+- `apps/crawler/test/discover-enqueue.test.ts`
+- `apps/crawler/test/fixtures/sitemap-snippet.xml`
+
+**Files modified:**
+- `apps/crawler/src/parse/index.ts` — `pipelineKeyFor` gains segment-count filter; returns `null` for roots and intermediates
+- `apps/crawler/test/route.test.ts` — 5 new segment-count cases; 4 original cases updated
+- `apps/crawler/src/crawl.ts` — `CrawlOptions.discoverer` replaced with `seeds: string[]`; `discovered` counter removed; single `CheerioCrawler` with `enqueueLinks` in request handler
+- `apps/crawler/src/cli.ts` — `--sitemap`, `--discover` flags removed; `--seed` (repeatable, required) replaces them; `PHILA_LEAF_FILTER` constant removed (logic is in `pipelineKeyFor`)
+- `package.json` (root) — `dev:crawl` uses `--seed` flags instead of `--sitemap`
+
+**Test count:** 28 → 18 tests (discover tests gone; 8 route tests + 5 services + 5 programs).
+
+**Smoke test result:** Fetched: 35, Parsed: 11, Ingested: 11, Failed: 0, Duration: ~2s (with `--limit 10`). Search for "water bill" returns results. Known noise: after abort, Crawlee logs WARN/ERROR about the dropped queue while reclaiming in-flight requests — functional correctness is unaffected (exit 0, data ingested).
+
+- [x] **Step 1:** Delete `apps/crawler/src/discover/` directory and all files within it
+- [x] **Step 2:** Delete discover tests and sitemap fixture
+- [x] **Step 3:** Update `pipelineKeyFor` with segment-count rules
+- [x] **Step 4:** Update `route.test.ts` with new segment-count cases
+- [x] **Step 5:** Rewrite `crawl.ts` — single CheerioCrawler with seeds + `enqueueLinks`
+- [x] **Step 6:** Rewrite `cli.ts` — seed-only flags
+- [x] **Step 7:** Update root `package.json` `dev:crawl` script
+- [x] **Step 8:** `pnpm --filter @phila/search-crawler exec tsc --noEmit` → clean
+- [x] **Step 9:** `pnpm --filter @phila/search-crawler test` → 18 tests passing
+- [x] **Step 10:** Manual smoke test → ingested 11, failed 0, search returns results
+- [x] **Step 11:** Commit
 
 ---
 

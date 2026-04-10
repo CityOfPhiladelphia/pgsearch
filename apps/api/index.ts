@@ -11,7 +11,7 @@ import { healthRoutes } from './routes/health'
 import { getPool, registerVectorType } from './db/pool'
 import { runMigrations } from './db/migrate'
 
-const app = new Hono()
+export const app = new Hono()
 
 app.use('*', cors({
   origin: '*',

@@ -6,7 +6,7 @@ import { searchAuth } from '../middleware/auth'
 import { hybridSearch } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
-import type { SearchIndex, IndexConfig } from '../types'
+import type { AppEnv, IndexConfig } from '../types'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import { createTestAdapter, createBedrockAdapter } from '@phila/search-embeddings'
 
@@ -17,8 +17,8 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
   return createTestAdapter(config.embedding.dimensions)
 }
 
-export const searchRoutes = new Hono()
-searchRoutes.use('/*', searchAuth)
+export const searchRoutes = new Hono<AppEnv>()
+searchRoutes.use('/search/:name', searchAuth)
 
 searchRoutes.get('/search/:name', async (c) => {
   const q = c.req.query('q')
@@ -32,7 +32,7 @@ searchRoutes.get('/search/:name', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
   }
 
-  const index = c.get('index') as SearchIndex
+  const index = c.get('index')
   const pool = await getPool()
   const adapter = getAdapter(index.config)
 

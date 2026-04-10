@@ -4,7 +4,7 @@
 import { createMiddleware } from 'hono/factory'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
-import type { Context, Next } from 'hono'
+import type { AppEnv } from '../types'
 import { apiError } from './error'
 
 const BCRYPT_ROUNDS = 10
@@ -21,7 +21,7 @@ export async function verifyKey(key: string, hash: string): Promise<boolean> {
   return bcrypt.compare(key, hash)
 }
 
-export const indexAuth = createMiddleware(async (c: Context, next: Next) => {
+export const indexAuth = createMiddleware<AppEnv>(async (c, next) => {
   const indexKey = c.req.header('x-index-key')
   if (!indexKey) {
     return apiError(c, 'UNAUTHORIZED', 'Missing x-index-key header')
@@ -42,9 +42,10 @@ export const indexAuth = createMiddleware(async (c: Context, next: Next) => {
 
   c.set('index', index)
   await next()
+  return
 })
 
-export const searchAuth = createMiddleware(async (c: Context, next: Next) => {
+export const searchAuth = createMiddleware<AppEnv>(async (c, next) => {
   const searchKey = c.req.header('x-search-key')
   if (!searchKey) {
     return apiError(c, 'UNAUTHORIZED', 'Missing x-search-key header')
@@ -65,4 +66,5 @@ export const searchAuth = createMiddleware(async (c: Context, next: Next) => {
 
   c.set('index', index)
   await next()
+  return
 })

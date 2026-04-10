@@ -9,8 +9,18 @@ let vectorRegistered = false
 
 export async function getPool(): Promise<Pool> {
   if (!pool) {
-    const { getPool: getPhilaPool } = await import('@phila/db-postgres')
-    pool = await getPhilaPool()
+    if (process.env.DB_SECRET_ARN) {
+      const { getPool: getPhilaPool } = await import('@phila/db-postgres')
+      pool = await getPhilaPool()
+    } else {
+      pool = new Pool({
+        host:     process.env.DB_HOST,
+        port:     Number(process.env.DB_PORT),
+        database: process.env.DB_NAME,
+        user:     process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+      })
+    }
   }
   return pool
 }
