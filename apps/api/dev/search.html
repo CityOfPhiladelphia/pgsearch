@@ -30,7 +30,7 @@
 <h1>pgsearch dev</h1>
 
 <div class="config">
-  <label>API base URL <input id="api-base" value="http://localhost:3000"></label>
+  <label>API base URL <input id="api-base" value="https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev"></label>
   <label>Index name <input id="index-name" value="phila-services-programs"></label>
   <label>Search key <input id="search-key" type="password" placeholder="srch_..."></label>
 </div>
@@ -64,7 +64,7 @@
     const key = $searchKey.value;
     $results.innerHTML = '<div class="empty">searching…</div>';
     try {
-      const res = await fetch(`${base}/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20`, {
+      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20`, {
         headers: { 'x-search-key': key },
       });
       if (!res.ok) {

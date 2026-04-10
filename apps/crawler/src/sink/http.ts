@@ -33,7 +33,7 @@ export async function postDocument(
     },
   }
 
-  const url = `${config.endpoint.replace(/\/$/, '')}/index/${encodeURIComponent(config.indexName)}/documents`
+  const url = `${config.endpoint.replace(/\/$/, '')}/public/index/${encodeURIComponent(config.indexName)}/documents`
 
   const res = await fetch(url, {
     method: 'POST',

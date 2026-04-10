@@ -6,21 +6,13 @@ import { indexAuth } from '../middleware/auth'
 import { ingestDocument, deleteDocument } from '../services/ingest'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
-import type { AppEnv, IndexConfig } from '../types'
-import type { EmbeddingAdapter } from '@phila/search-embeddings'
-import { createTestAdapter, createBedrockAdapter } from '@phila/search-embeddings'
-
-function getAdapter(config: IndexConfig): EmbeddingAdapter {
-  if (config.embedding.provider === 'bedrock') {
-    return createBedrockAdapter(config.embedding)
-  }
-  return createTestAdapter(config.embedding.dimensions)
-}
+import { getAdapter } from '../services/adapter'
+import type { AppEnv } from '../types'
 
 export const ingestRoutes = new Hono<AppEnv>()
-ingestRoutes.use('/index/:name/*', indexAuth)
+ingestRoutes.use('/public/index/:name/*', indexAuth)
 
-ingestRoutes.post('/index/:name/documents', async (c) => {
+ingestRoutes.post('/public/index/:name/documents', async (c) => {
   const body = await c.req.json()
 
   if (!body.external_id || typeof body.external_id !== 'string') {
@@ -53,7 +45,7 @@ ingestRoutes.post('/index/:name/documents', async (c) => {
   }
 })
 
-ingestRoutes.delete('/index/:name/documents/:external_id', async (c) => {
+ingestRoutes.delete('/public/index/:name/documents/:external_id', async (c) => {
   const externalId = c.req.param('external_id')
   const index = c.get('index')
   const pool = await getPool()
