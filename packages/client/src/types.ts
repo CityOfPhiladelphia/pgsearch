@@ -7,7 +7,10 @@ export interface IndexConfig {
   bm25_k1?: number
   bm25_b?: number
   field_weights?: { title?: number; body?: number }
-  blend_alpha?: number
+  rrf_k?: number
+  rrf_weights?: { bm25?: number; vector?: number }
+  min_bm25_score?: number
+  min_vector_score?: number
   max_segment_tokens?: number
   max_segments_per_document?: number
   refresh_threshold?: number
