@@ -77,6 +77,12 @@ curl -X POST https://<api-url>/private/key/admin/indexes/my-index/refresh \
   -H "x-api-key: $ADMIN_KEY"
 ```
 
+Response:
+
+```json
+{"status": "refreshed"}
+```
+
 Refresh materializes the term frequency statistics used by BM25F scoring. You don't need to run it after every document — run it once after a bulk ingestion batch.
 
 An auto-refresh triggers automatically when `refresh_threshold` (default: 100) documents have changed since the last refresh.
