@@ -1903,6 +1903,7 @@ If nothing changed, this step is a no-op.
 - [x] **Step 5:** `pnpm --filter @phila/search-crawler exec tsc --noEmit` → clean
 - [x] **Step 6:** `pnpm --filter @phila/search-crawler test` → 28 tests passing
 - [x] **Step 7:** Commit
+- [x] **Step 8 (bugfix):** Queue isolation — both `createEnqueueDiscoverer` and the `crawl` orchestrator now open named `RequestQueue` instances (dropped in `finally`) so they never share Crawlee's default persistent queue. Surfaced by the Task 16 smoke test: discoverer walked 904 URLs, marked them handled in the default queue, then the orchestrator opened the same queue and exited with Fetched: 0.
 
 ---
 

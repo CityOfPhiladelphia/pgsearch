@@ -1,7 +1,7 @@
 // ABOUTME: Recursive enqueueLinks-based URL discoverer; walks the link graph from seeds.
 // ABOUTME: Yields URLs matching a caller-supplied filter by traversing links within seed URL paths.
 
-import { CheerioCrawler, log, LogLevel } from 'crawlee'
+import { CheerioCrawler, log, LogLevel, RequestQueue } from 'crawlee'
 import type { Discoverer } from './types'
 
 export interface EnqueueDiscovererOptions {
@@ -34,11 +34,16 @@ export function createEnqueueDiscoverer(options: EnqueueDiscovererOptions): Disc
         return
       }
 
-      // Production path: real Crawlee crawler.
+      // Production path: real Crawlee crawler with an isolated request queue.
+      // Each run gets its own named queue so it doesn't collide with the main
+      // orchestrator's queue or with previous runs' state.
       log.setLevel(LogLevel.WARNING)
       const seedUrls = options.seeds.map(s => new URL(s))
       const seedHostname = seedUrls[0]?.hostname
+      const queueName = `discover-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const requestQueue = await RequestQueue.open(queueName)
       const crawler = new CheerioCrawler({
+        requestQueue,
         maxConcurrency: options.maxConcurrency ?? 4,
         maxRequestRetries: 2,
         requestHandlerTimeoutSecs: 30,
@@ -86,8 +91,12 @@ export function createEnqueueDiscoverer(options: EnqueueDiscovererOptions): Disc
         },
       })
 
-      await crawler.addRequests(options.seeds.map(url => ({ url })))
-      await crawler.run()
+      try {
+        await crawler.addRequests(options.seeds.map(url => ({ url })))
+        await crawler.run()
+      } finally {
+        await requestQueue.drop()
+      }
 
       for (const url of matched) yield url
     },

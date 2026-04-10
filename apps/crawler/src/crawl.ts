@@ -1,7 +1,7 @@
 // ABOUTME: Crawl orchestrator — wires Discoverer, parse pipelines, and HTTP sink to a CheerioCrawler.
 // ABOUTME: Single straight pipe per page; no persisted state. --limit counts successful ingests.
 
-import { CheerioCrawler, log, LogLevel } from 'crawlee'
+import { CheerioCrawler, log, LogLevel, RequestQueue } from 'crawlee'
 import type { Discoverer } from './discover'
 import { pipelines, pipelineKeyFor } from './parse'
 import type { SinkConfig } from './sink/http'
@@ -40,7 +40,10 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
   let stopRequested = false
   // `limit` is a soft cap — concurrent handlers may overshoot by up to maxConcurrency-1.
 
+  const queueName = `crawl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const requestQueue = await RequestQueue.open(queueName)
   const crawler = new CheerioCrawler({
+    requestQueue,
     maxConcurrency: options.maxConcurrency ?? 4,
     maxRequestRetries: options.maxRetries ?? 2,
     requestHandlerTimeoutSecs: options.requestHandlerTimeoutSecs ?? 30,
@@ -111,14 +114,18 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
     },
   })
 
-  // Drain the discoverer into the crawler queue, then run.
-  for await (const url of options.discoverer.discover()) {
-    counters.discovered++
-    await crawler.addRequests([{ url: url.toString() }])
-  }
-  console.log(`[discover] enqueued ${counters.discovered} URLs`)
+  try {
+    // Drain the discoverer into the crawler queue, then run.
+    for await (const url of options.discoverer.discover()) {
+      counters.discovered++
+      await crawler.addRequests([{ url: url.toString() }])
+    }
+    console.log(`[discover] enqueued ${counters.discovered} URLs`)
 
-  await crawler.run()
+    await crawler.run()
+  } finally {
+    await requestQueue.drop()
+  }
 
   return {
     ...counters,
