@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import { App, Stack } from 'aws-cdk-lib';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { LambdaPostgresApi, Confidentiality, Environment, applyNagChecks, applyStandardTags } from '@phila/constructs';
@@ -80,6 +81,26 @@ pgsearchApi.api.lambda.function.addToRolePolicy(
     ],
   }),
 );
+
+// Disable API Gateway stage-level response caching. @phila/constructs
+// PhilaApiGateway enables caching with a 5-minute TTL on all methods under
+// `/*/*`, but the proxy routes `/public/{proxy+}` and `/private/key/{proxy+}`
+// don't declare cache key parameters, so API Gateway collapses every request
+// under a proxy prefix to a single cache key. The result is that any GET
+// (search, health, admin reads) returns whichever response was cached first,
+// regardless of the actual query, path, or auth. Strip that out entirely for
+// pgsearch — the construct needs an upstream knob for this.
+const stageCfn = pgsearchApi.api.api.api.deploymentStage.node.defaultChild as apigateway.CfnStage;
+stageCfn.addPropertyOverride('CacheClusterEnabled', false);
+stageCfn.addPropertyOverride('MethodSettings', [
+  {
+    HttpMethod: '*',
+    ResourcePath: '/*',
+    CachingEnabled: false,
+    MetricsEnabled: true,
+    LoggingLevel: 'INFO',
+  },
+]);
 
 // Apply standard tags to all taggable resources
 applyStandardTags(app, context);

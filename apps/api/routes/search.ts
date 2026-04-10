@@ -28,6 +28,8 @@ searchRoutes.get('/public/search/:name', async (c) => {
   const pool = await getPool()
   const adapter = getAdapter(index.config)
 
+  console.log(`[search-debug] q="${q}" index=${index.name} index_id=${index.index_id}`)
   const results = await hybridSearch(pool, index.index_id, adapter, q.trim(), { limit })
+  console.log(`[search-debug] returned ${results.results.length} results, first ext_id=${results.results[0]?.external_id}`)
   return c.json(results, 200)
 })
