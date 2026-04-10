@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import { App, Stack } from 'aws-cdk-lib';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { LambdaPostgresApi, Confidentiality, Environment, applyNagChecks, applyStandardTags } from '@phila/constructs';
 
 const app = new App();
@@ -41,7 +42,7 @@ const networkCidrsRaw = app.node.tryGetContext('networkCidrs') as string | undef
 const networkCidrs = networkCidrsRaw ? networkCidrsRaw.split(',') : undefined;
 
 // Scope as any so linked @phila/constructs resolves to a single Construct type at runtime.
-new LambdaPostgresApi(stack as any, 'pgsearchApi', {
+const pgsearchApi = new LambdaPostgresApi(stack as any, 'pgsearchApi', {
   ...context,
   apiId: 'api',
   runtime: 'nodejs22',
@@ -53,6 +54,20 @@ new LambdaPostgresApi(stack as any, 'pgsearchApi', {
   // Uncomment for serverless Aurora instead of provisioned RDS:
   // serverless: true,
 });
+
+// WAF override: the AWS Managed Common Rule Set includes SizeRestrictions_BODY,
+// which blocks any request body over 8 KiB. Document ingest payloads are routinely
+// 10-60 KB of parsed markdown, so without this override every POST /public/index/*
+// /documents call is rejected with a 403 before reaching the Lambda. Set the rule to
+// Count so it's still observable in CloudWatch without blocking. Delete this block
+// once @phila/constructs exposes a first-class commonRuleSetOverrides prop.
+const webAcl = pgsearchApi.api.node
+  .findChild('Waf')
+  .node.findChild('WebAcl') as wafv2.CfnWebACL;
+webAcl.addPropertyOverride(
+  'Rules.0.Statement.ManagedRuleGroupStatement.RuleActionOverrides',
+  [{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }],
+);
 
 // Apply standard tags to all taggable resources
 applyStandardTags(app, context);
