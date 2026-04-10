@@ -51,13 +51,25 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
         gotOptions.headers = { ...gotOptions.headers, 'user-agent': options.userAgent }
       },
     ],
-    requestHandler: async ({ request, $ }) => {
+    requestHandler: async ({ request, response, $ }) => {
       counters.fetched++
       if (stopRequested) return
 
-      const key = pipelineKeyFor(request.url)
+      // Crawlee passes 4xx/5xx HTML bodies through to the success handler.
+      // Treat anything outside 2xx as a failed fetch and skip parsing.
+      const status = response?.statusCode
+      if (status != null && (status < 200 || status >= 300)) {
+        console.error(`[fetch] non-2xx for ${request.url}: ${status}`)
+        counters.failed++
+        return
+      }
+
+      // Use the final URL after redirects for routing and document identity.
+      const finalUrl = request.loadedUrl ?? request.url
+      const key = pipelineKeyFor(finalUrl)
       if (!key) {
-        // Defensive — sitemap filter should already exclude.
+        // Defensive — sitemap filter should already exclude. Post-redirect
+        // URLs that don't match any pipeline are silently skipped.
         return
       }
 
@@ -68,13 +80,13 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
         doc = await parse($.html())
         counters.parsed++
       } catch (err) {
-        console.error(`[parse] failed for ${request.url}:`, (err as Error).stack ?? err)
+        console.error(`[parse] failed for ${finalUrl}:`, (err as Error).stack ?? err)
         counters.failed++
         return
       }
 
       try {
-        await postDocument(options.sink, doc, request.url, key)
+        await postDocument(options.sink, doc, finalUrl, key)
         counters.ingested++
         if (options.limit != null && counters.ingested >= options.limit) {
           stopRequested = true
@@ -89,7 +101,7 @@ export async function crawl(options: CrawlOptions): Promise<CrawlSummary> {
           await crawler.autoscaledPool?.abort()
           return
         }
-        console.error(`[sink] failed for ${request.url}:`, (err as Error).message)
+        console.error(`[sink] failed for ${finalUrl}:`, (err as Error).message)
         counters.failed++
       }
     },
