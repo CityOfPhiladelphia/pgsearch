@@ -10,7 +10,7 @@ PostgreSQL hybrid search service combining BM25F full-text keyword scoring with 
 - **Index** — a named, isolated search namespace. Each index has its own configuration, authentication keys, documents, and vector index. Create one per content domain (e.g., "services-programs", "city-news").
 - **Document** — a searchable unit identified by `external_id`. Has a title, body text, and optional metadata. The body is automatically split into segments for embedding.
 - **Segment** — a chunk of document body (~500 words). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
-- **Hybrid search** — each query runs two passes: keyword matching (BM25F on tsvectors) and semantic similarity (pgvector cosine distance). Scores are normalized and blended into a single ranking.
+- **Hybrid search** — each query runs two passes: keyword matching (BM25F on tsvectors) and semantic similarity (pgvector cosine distance). Results are combined using Reciprocal Rank Fusion (RRF) for robust ranking.
 
 ## Quick start
 

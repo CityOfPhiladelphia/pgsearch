@@ -112,7 +112,7 @@ Response:
 }
 ```
 
-- `score` is a blend of keyword relevance (BM25F) and semantic similarity (vector).
+- `score` is a rank-based combination of keyword relevance (BM25F) and semantic similarity (vector) using Reciprocal Rank Fusion.
 - `snippet` is the best-matching segment from the document.
 - `total` is the count of unique matching documents before the `limit` is applied — not the length of `results`.
 

@@ -9,18 +9,19 @@ This guide explains how pgsearch ranks results and how to adjust scoring to impr
 
 ## How Hybrid Search Works
 
-Each query runs two independent retrieval passes, then blends the results into a single ranked list.
+Each query runs two independent retrieval passes, then combines the results into a single ranked list.
 
 1. **BM25F pass** — full-text keyword search. PostgreSQL tsvectors match stemmed query terms against title and body fields. Title matches are weighted 3x by default.
 
 2. **Vector pass** — semantic similarity. The query is embedded and compared against document segment embeddings using pgvector HNSW cosine similarity.
 
-3. **Score normalization** — each pass's scores are independently normalized to [0, 1] using min-max normalization.
+3. **Score floors** — each pass's candidates are filtered by a minimum score threshold. Candidates below the floor are excluded before fusion. Defaults are off (0).
 
-4. **Blending** — the two normalized scores are combined:
+4. **RRF fusion** — results from each pass are independently ranked by raw score. The final score uses Reciprocal Rank Fusion:
    ```
-   final score = blend_alpha × normalized_bm25 + (1 − blend_alpha) × normalized_vector
+   score = w_bm25 / (k + bm25_rank) + w_vector / (k + vector_rank)
    ```
+   Candidates appearing in both passes get contributions from both, naturally ranking higher. See [RRF on Wikipedia](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion) for background.
 
 5. **Deduplication** — one result per document. When multiple segments of the same document match, only the highest-scoring segment is returned (as the snippet).
 
@@ -32,7 +33,11 @@ Each index has its own set of scoring parameters. You can adjust them independen
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `blend_alpha` | `0.6` | Weight given to keyword (BM25F) vs. semantic (vector) scores. Higher values favor exact keyword matches; lower values favor meaning-based matches. Start here if results feel wrong. |
+| `rrf_k` | `60` | RRF smoothing constant. Higher values reduce the influence of top-ranked results. |
+| `rrf_weights.bm25` | `1.0` | Weight multiplier for the BM25F rank contribution. Increase to favor keyword matches. |
+| `rrf_weights.vector` | `1.0` | Weight multiplier for the vector rank contribution. Increase to favor semantic matches. |
+| `min_bm25_score` | `0` | Minimum raw BM25F score. Candidates below this floor are excluded before fusion. |
+| `min_vector_score` | `0` | Minimum raw vector similarity score. Candidates below this floor are excluded before fusion. |
 | `field_weights.title` | `3.0` | BM25F weight multiplier for title matches. |
 | `field_weights.body` | `1.0` | BM25F weight multiplier for body matches. |
 | `bm25_k1` | `1.2` | Term frequency saturation. Higher values let repeated terms matter more. Defaults work well for most content. |
@@ -49,7 +54,7 @@ Use PATCH on your index to update any parameter:
 curl -X PATCH https://<api-url>/private/key/admin/indexes/my-index \
   -H "x-api-key: $ADMIN_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"blend_alpha": 0.4}'
+  -d '{"rrf_weights": {"bm25": 2.0}}'
 ```
 
 Changes take effect immediately for new queries.
@@ -60,7 +65,7 @@ Changes take effect immediately for new queries.
 
 These are design decisions baked into pgsearch and why they were made:
 
-- **Min-max normalization** — scores from each pass are independently scaled to [0, 1] before blending. Simple and interpretable. Trade-off: sensitive to outliers. Alternative approaches like Reciprocal Rank Fusion (RRF) exist but add complexity without clear benefit at this scale.
+- **Reciprocal Rank Fusion (RRF)** — scores from each pass are combined by rank position rather than raw score magnitude. Robust to outliers and score distribution differences between retrievers. Trade-off: discards score magnitude information, treating all scores as rank positions. For municipal-scale content, this robustness matters more than magnitude sensitivity.
 
 - **Title embedded with segments** — each segment's embedding is computed from `"Document Title\n\nbody segment text"` (title prepended directly, no label prefix). This gives the vector model document-level context for each chunk.
 
@@ -72,7 +77,7 @@ These are design decisions baked into pgsearch and why they were made:
 
 ## Things to Be Aware Of
 
-- **Scores are relative, not absolute.** Min-max normalization means scores reflect position within the current result set. A score of 0.9 in one query is not comparable to 0.9 in another.
+- **Scores are rank-derived, not magnitude-based.** RRF scores reflect rank position, not raw relevance magnitude. A higher score means better rank across retrievers, but scores are not directly comparable across different queries.
 
 - **Results are per-document, not per-segment.** A long document with multiple matching sections returns once. The snippet is the best-matching segment.
 

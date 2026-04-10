@@ -126,9 +126,9 @@ A single PostgreSQL instance handles relational storage, full-text search, and v
 
 HNSW provides better recall at the cost of slower index build time and more memory. Appropriate for read-heavy indexes.
 
-### 3. Min-max score normalization
+### 3. Reciprocal Rank Fusion (RRF)
 
-Simple and interpretable. Trade-off vs. RRF: min-max is sensitive to outliers but preserves score magnitude information. RRF is more robust to outliers but discards magnitude.
+BM25F and vector results are independently ranked, then combined using RRF: `score = Σ w / (k + rank)`. This is robust to outlier scores and score distribution differences between retrievers. Trade-off vs. min-max normalization: RRF discards score magnitude, treating all scores as rank positions. For this use case, robustness to weak-signal inflation matters more than preserving magnitude.
 
 ### 4. WAF body size override
 
