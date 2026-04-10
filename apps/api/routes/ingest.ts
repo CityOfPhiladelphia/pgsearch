@@ -18,7 +18,7 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
 }
 
 export const ingestRoutes = new Hono<AppEnv>()
-ingestRoutes.use('/*', indexAuth)
+ingestRoutes.use('/index/:name/*', indexAuth)
 
 ingestRoutes.post('/index/:name/documents', async (c) => {
   const body = await c.req.json()

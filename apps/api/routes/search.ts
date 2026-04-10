@@ -18,7 +18,7 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
 }
 
 export const searchRoutes = new Hono<AppEnv>()
-searchRoutes.use('/*', searchAuth)
+searchRoutes.use('/search/:name', searchAuth)
 
 searchRoutes.get('/search/:name', async (c) => {
   const q = c.req.query('q')
