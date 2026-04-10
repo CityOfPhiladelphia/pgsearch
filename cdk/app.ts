@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import { App, Stack } from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { LambdaPostgresApi, Confidentiality, Environment, applyNagChecks, applyStandardTags } from '@phila/constructs';
 
@@ -67,6 +68,17 @@ const webAcl = pgsearchApi.api.node
 webAcl.addPropertyOverride(
   'Rules.0.Statement.ManagedRuleGroupStatement.RuleActionOverrides',
   [{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }],
+);
+
+// Allow the Lambda to call Bedrock Titan Embed v2 for per-index embeddings.
+// Scoped to the specific model ARN so the grant is minimal.
+pgsearchApi.api.lambda.function.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['bedrock:InvokeModel'],
+    resources: [
+      `arn:aws:bedrock:${stack.region}::foundation-model/amazon.titan-embed-text-v2:0`,
+    ],
+  }),
 );
 
 // Apply standard tags to all taggable resources

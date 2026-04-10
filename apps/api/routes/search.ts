@@ -6,16 +6,8 @@ import { searchAuth } from '../middleware/auth'
 import { hybridSearch } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
-import type { AppEnv, IndexConfig } from '../types'
-import type { EmbeddingAdapter } from '@phila/search-embeddings'
-import { createTestAdapter, createBedrockAdapter } from '@phila/search-embeddings'
-
-function getAdapter(config: IndexConfig): EmbeddingAdapter {
-  if (config.embedding.provider === 'bedrock') {
-    return createBedrockAdapter(config.embedding)
-  }
-  return createTestAdapter(config.embedding.dimensions)
-}
+import { getAdapter } from '../services/adapter'
+import type { AppEnv } from '../types'
 
 export const searchRoutes = new Hono<AppEnv>()
 searchRoutes.use('/public/search/:name', searchAuth)
