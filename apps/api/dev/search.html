@@ -64,7 +64,7 @@
     const key = $searchKey.value;
     $results.innerHTML = '<div class="empty">searching…</div>';
     try {
-      const res = await fetch(`${base}/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20`, {
+      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20`, {
         headers: { 'x-search-key': key },
       });
       if (!res.ok) {

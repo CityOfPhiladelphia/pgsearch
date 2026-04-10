@@ -18,9 +18,9 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
 }
 
 export const ingestRoutes = new Hono<AppEnv>()
-ingestRoutes.use('/index/:name/*', indexAuth)
+ingestRoutes.use('/public/index/:name/*', indexAuth)
 
-ingestRoutes.post('/index/:name/documents', async (c) => {
+ingestRoutes.post('/public/index/:name/documents', async (c) => {
   const body = await c.req.json()
 
   if (!body.external_id || typeof body.external_id !== 'string') {
@@ -53,7 +53,7 @@ ingestRoutes.post('/index/:name/documents', async (c) => {
   }
 })
 
-ingestRoutes.delete('/index/:name/documents/:external_id', async (c) => {
+ingestRoutes.delete('/public/index/:name/documents/:external_id', async (c) => {
   const externalId = c.req.param('external_id')
   const index = c.get('index')
   const pool = await getPool()

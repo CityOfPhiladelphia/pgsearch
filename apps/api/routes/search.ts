@@ -18,9 +18,9 @@ function getAdapter(config: IndexConfig): EmbeddingAdapter {
 }
 
 export const searchRoutes = new Hono<AppEnv>()
-searchRoutes.use('/search/:name', searchAuth)
+searchRoutes.use('/public/search/:name', searchAuth)
 
-searchRoutes.get('/search/:name', async (c) => {
+searchRoutes.get('/public/search/:name', async (c) => {
   const q = c.req.query('q')
   if (!q || typeof q !== 'string' || q.trim() === '') {
     return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: q')
