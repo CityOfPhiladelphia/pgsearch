@@ -10,4 +10,5 @@ export type DiscoverKey = (typeof DISCOVER)[keyof typeof DISCOVER]
 export type { Discoverer } from './types'
 export { createSitemapDiscoverer } from './sitemap'
 export type { SitemapDiscovererOptions } from './sitemap'
-export { enqueueDiscoverer } from './enqueue'
+export { createEnqueueDiscoverer } from './enqueue'
+export type { EnqueueDiscovererOptions } from './enqueue'

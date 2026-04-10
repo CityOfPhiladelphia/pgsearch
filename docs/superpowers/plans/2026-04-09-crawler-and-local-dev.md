@@ -1064,25 +1064,9 @@ export interface Discoverer {
 }
 ```
 
-- [ ] **Step 2: Create the stub**
+- [ ] **Step 2: Create `apps/crawler/src/discover/enqueue.ts`**
 
-`apps/crawler/src/discover/enqueue.ts`:
-
-```ts
-// ABOUTME: Placeholder enqueueLinks-based Discoverer; throws NotImplementedError on call.
-
-import type { Discoverer } from './types'
-
-export const enqueueDiscoverer: Discoverer = {
-  // eslint-disable-next-line require-yield
-  async *discover() {
-    throw new Error(
-      'NotImplementedError: enqueue-based discovery is not yet implemented. ' +
-      'See docs/superpowers/specs/2026-04-09-crawler-and-local-dev-design.md.'
-    )
-  },
-}
-```
+See Task 16 for the implementation.
 
 - [ ] **Step 3: Type-check the crawler package**
 
@@ -1895,6 +1879,30 @@ git commit -m "fix(crawler): <what>"
 ```
 
 If nothing changed, this step is a no-op.
+
+---
+
+## Task 16: Implement `createEnqueueDiscoverer` for recursive URL discovery
+
+**Motivation:** The Task 15 smoke test surfaced that phila.gov's sitemap is incomplete — for the `/services/` URL space, it lists ~60 leaves while recursive crawling finds ~150-200. For example, the `water-gas-utilities` category links to 25 service URLs, only 17 of which appear in the sitemap. The `enqueueDiscoverer` stub from Task 10 was deferred to here.
+
+**Files modified:**
+- `apps/crawler/src/discover/enqueue.ts` — replaced stub with `createEnqueueDiscoverer` factory
+- `apps/crawler/test/discover-enqueue.test.ts` — 6 TDD tests against injected fake fetch
+- `apps/crawler/src/discover/index.ts` — exports `createEnqueueDiscoverer` (stub singleton removed)
+- `apps/crawler/src/cli.ts` — added `--discover sitemap|enqueue` flag (default `sitemap`) and repeatable `--seed` flag
+
+**Description:** Replaces the Task 10 stub with a real recursive walker. Yields URLs matching a leaf filter by walking the link graph from caller-supplied seed URLs. Uses Crawlee's `enqueueLinks` in production; accepts an optional `fetch` injection for hermetic unit tests (same pattern as `createSitemapDiscoverer`). The CLI's default mode remains `sitemap`, keeping `pnpm dev:crawl` unchanged.
+
+**Test count:** 22 → 28 tests passing.
+
+- [x] **Step 1:** Write failing test (`apps/crawler/test/discover-enqueue.test.ts`)
+- [x] **Step 2:** Implement `createEnqueueDiscoverer` in `apps/crawler/src/discover/enqueue.ts`
+- [x] **Step 3:** Update `apps/crawler/src/discover/index.ts` — export factory, remove stub
+- [x] **Step 4:** Update `apps/crawler/src/cli.ts` — add `--discover` and `--seed` flags
+- [x] **Step 5:** `pnpm --filter @phila/search-crawler exec tsc --noEmit` → clean
+- [x] **Step 6:** `pnpm --filter @phila/search-crawler test` → 28 tests passing
+- [x] **Step 7:** Commit
 
 ---
 
