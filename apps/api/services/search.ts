@@ -1,10 +1,10 @@
 // ABOUTME: Hybrid search pipeline combining BM25F keyword scoring and pgvector similarity.
-// ABOUTME: Two-pass retrieval with score normalization, blending, and document deduplication.
+// ABOUTME: Two-pass retrieval with score floors, RRF fusion, and document deduplication.
 
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { SearchResponse, SearchResult } from '../types'
-import { computeBM25F, normalizeScores } from './score'
+import { computeBM25F, computeRRF } from './score'
 
 export interface VectorCandidate {
   segment_id: string
@@ -33,6 +33,8 @@ export type SearchMode = 'hybrid' | 'bm25' | 'semantic'
 export interface HybridSearchOptions {
   limit?: number
   mode?: SearchMode
+  minBm25Score?: number
+  minVectorScore?: number
 }
 
 export async function vectorCandidates(
@@ -119,8 +121,6 @@ export async function hybridSearch(
   const k1: number = config.bm25_k1 ?? 1.2
   const b: number = config.bm25_b ?? 0.75
   const fieldWeights = config.field_weights ?? { title: 3.0, body: 1.0 }
-  const blendAlpha: number = config.blend_alpha ?? 0.6
-
   // Parse tsquery and stem terms (only needed for BM25 pass)
   let tsquery: string | null = null
   let queryTerms: string[] = []
@@ -260,46 +260,58 @@ export async function hybridSearch(
     }
   }
 
-  if (segmentMap.size === 0) {
-    return { results: [], total: 0, query: queryText }
-  }
-
   const segments = Array.from(segmentMap.values())
 
-  // Normalize and blend scores based on search mode
-  const bm25Scores = segments.map(s => s.bm25Score)
-  const vectorScores = segments.map(s => s.vectorScore)
-  const normalizedBm25 = normalizeScores(bm25Scores)
-  const normalizedVector = normalizeScores(vectorScores)
+  const rrfK: number = config.rrf_k ?? 60
+  const rrfWeights = config.rrf_weights ?? { bm25: 1.0, vector: 1.0 }
+  const minBm25Score = options.minBm25Score ?? config.min_bm25_score ?? 0
+  const minVectorScore = options.minVectorScore ?? config.min_vector_score ?? 0
 
-  const scored = segments.map((s, i) => {
-    let blendedScore: number
-    if (mode === 'bm25') {
-      blendedScore = normalizedBm25[i]
-    } else if (mode === 'semantic') {
-      blendedScore = normalizedVector[i]
-    } else {
-      blendedScore = blendAlpha * normalizedBm25[i] + (1 - blendAlpha) * normalizedVector[i]
-    }
-    return { ...s, blendedScore }
-  })
+  // Assign 1-based ranks per retriever (sorted by raw score descending), applying score floors
+  const bm25Ranked = segments
+    .filter(s => s.bm25Score > minBm25Score)
+    .sort((a, b) => b.bm25Score - a.bm25Score)
+  const bm25RankMap = new Map<string, number>()
+  bm25Ranked.forEach((s, i) => bm25RankMap.set(s.segment_id, i + 1))
+
+  const vectorRanked = segments
+    .filter(s => s.vectorScore > minVectorScore)
+    .sort((a, b) => b.vectorScore - a.vectorScore)
+  const vectorRankMap = new Map<string, number>()
+  vectorRanked.forEach((s, i) => vectorRankMap.set(s.segment_id, i + 1))
+
+  // Compute RRF score for each segment
+  const scored = segments
+    .map(s => {
+      const bm25Rank = bm25RankMap.get(s.segment_id)
+      const vectorRank = vectorRankMap.get(s.segment_id)
+      // Segments excluded by both score floors are dropped
+      if (bm25Rank == null && vectorRank == null) return null
+      const score = computeRRF({ bm25Rank, vectorRank, k: rrfK, weights: rrfWeights })
+      return { ...s, score }
+    })
+    .filter((s): s is NonNullable<typeof s> => s != null)
+
+  if (scored.length === 0) {
+    return { results: [], total: 0, query: queryText }
+  }
 
   // Deduplicate: keep the highest-scoring segment per document
   const bestByDoc = new Map<string, typeof scored[0]>()
   for (const s of scored) {
     const existing = bestByDoc.get(s.document_id)
-    if (!existing || s.blendedScore > existing.blendedScore) {
+    if (!existing || s.score > existing.score) {
       bestByDoc.set(s.document_id, s)
     }
   }
 
   const deduped = Array.from(bestByDoc.values())
-    .sort((a, b) => b.blendedScore - a.blendedScore)
+    .sort((a, b) => b.score - a.score)
     .slice(0, limit)
 
   const results: SearchResult[] = deduped.map(s => ({
     external_id: s.external_id,
-    score: s.blendedScore,
+    score: s.score,
     title: s.title,
     snippet: s.body,
     metadata: s.metadata,

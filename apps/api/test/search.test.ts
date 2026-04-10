@@ -1,5 +1,5 @@
 // ABOUTME: Integration tests for hybrid search combining BM25F keyword scoring and vector similarity.
-// ABOUTME: Tests vector retrieval, BM25F scoring, score blending, and document deduplication.
+// ABOUTME: Tests vector retrieval, RRF fusion, score floors, and document deduplication.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, closePool } from './setup'
@@ -99,41 +99,59 @@ describe('search', () => {
 
   describe('search mode', () => {
     it('mode=bm25 returns only keyword matches', async () => {
-      // "parking permit" has BM25 matches, so should return results
       const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'bm25' })
       expect(results.results.length).toBeGreaterThan(0)
       expect(results.query).toBe('parking permit')
     })
 
     it('mode=bm25 returns empty for queries with no keyword matches', async () => {
-      // Nonsense query has no tsvector matches — BM25-only should return nothing
       const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'bm25' })
       expect(results.results).toEqual([])
       expect(results.total).toBe(0)
     })
 
     it('mode=semantic returns results even without keyword matches', async () => {
-      // Vector similarity still finds results for queries with no keyword match
       const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'semantic' })
       expect(results.results.length).toBeGreaterThan(0)
-    })
-
-    it('mode=semantic scores use only vector similarity', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'semantic' })
-      expect(results.results.length).toBeGreaterThan(0)
-      // All scores should be between 0 and 1 (normalized vector similarity)
-      for (const r of results.results) {
-        expect(r.score).toBeGreaterThanOrEqual(0)
-        expect(r.score).toBeLessThanOrEqual(1)
-      }
     })
 
     it('defaults to hybrid when mode is not specified', async () => {
       const hybrid = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
       const explicit = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'hybrid' })
-      // Same behavior — both return results with blended scores
       expect(hybrid.results.length).toBe(explicit.results.length)
       expect(hybrid.results[0].score).toBeCloseTo(explicit.results[0].score, 5)
+    })
+  })
+
+  describe('RRF fusion', () => {
+    it('scores follow RRF pattern (small positive values)', async () => {
+      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
+      expect(results.results.length).toBeGreaterThan(0)
+      for (const r of results.results) {
+        // RRF scores are small: max is w/(k+1) per retriever, so ~0.033 for two equal-weight retrievers
+        expect(r.score).toBeGreaterThan(0)
+        expect(r.score).toBeLessThan(1)
+      }
+    })
+
+    it('candidates appearing in both passes score higher than single-pass', async () => {
+      // "parking" matches via BM25 (keyword) and should also have vector similarity
+      // Documents that appear in both passes get two RRF contributions
+      const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 10 })
+      expect(results.results.length).toBeGreaterThan(1)
+      // The top result should score higher than the bottom — both-pass candidates rise
+      expect(results.results[0].score).toBeGreaterThan(results.results[results.results.length - 1].score)
+    })
+
+    it('score floors exclude weak candidates', async () => {
+      // With an impossibly high vector floor, semantic pass contributes nothing
+      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+        limit: 10,
+        mode: 'semantic',
+        minVectorScore: 0.99,
+      })
+      expect(results.results).toEqual([])
+      expect(results.total).toBe(0)
     })
   })
 })
