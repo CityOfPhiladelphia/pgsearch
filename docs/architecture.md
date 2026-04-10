@@ -144,9 +144,9 @@ pgsearch/
 │   ├── api/                   # Lambda search service
 │   │   ├── index.ts           # Hono app + Lambda handler
 │   │   ├── routes/            # admin, ingest, search, health
-│   │   ├── services/          # search, ingest, score, chunk, refresh, indexes
+│   │   ├── services/          # search, ingest, score, chunk, refresh, indexes, adapter
 │   │   ├── middleware/        # auth, error handling
-│   │   ├── db/                # pool, migrations, schema
+│   │   ├── db/                # pool, migrate, migrations
 │   │   ├── config.ts          # Default index configuration
 │   │   ├── types.ts           # Shared type definitions
 │   │   └── test/              # Integration tests

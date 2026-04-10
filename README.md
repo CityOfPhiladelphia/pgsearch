@@ -1,3 +1,6 @@
+<!-- ABOUTME: Project overview and documentation index for pgsearch. -->
+<!-- ABOUTME: Links to getting-started, search, ingestion, and architecture guides. -->
+
 # pgsearch
 
 PostgreSQL hybrid search service combining BM25F full-text keyword scoring with pgvector semantic similarity search. Multi-tenant — each index has independent configuration, authentication keys, and scoring parameters. Designed for municipal-scale content (city services, programs, articles) where operational simplicity matters more than peak throughput.
