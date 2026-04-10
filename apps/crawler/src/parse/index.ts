@@ -1,4 +1,5 @@
 // ABOUTME: Pipeline registry and URL-to-pipeline-key router for the crawler.
+// ABOUTME: pipelineKeyFor returns a PIPELINE key for /services/ leaves (>=3 path segments) and /programs/ leaves (exactly 2), or null.
 
 import type { CheerioAPI } from 'cheerio'
 import type { ParsedDocument } from '@phila/search-parse'
