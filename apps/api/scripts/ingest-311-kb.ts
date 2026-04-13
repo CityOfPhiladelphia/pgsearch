@@ -2,7 +2,7 @@
 // ABOUTME: Exports fetch/transform/push as pure functions so a future scheduled runner can reuse them.
 
 import { pathToFileURL } from 'node:url'
-import { pipeline, cleanWhitespace, toMarkdown } from '@phila/search-parse'
+import { pipeline, cleanWhitespace, remove, toMarkdown } from '@phila/search-parse'
 
 const REQUIRED_ENV = ['KB_API_BASE', 'KB_API_KEY', 'PGSEARCH_API_BASE', 'PGSEARCH_ADMIN_KEY'] as const
 export const ARTICLE_URL_BASE = 'https://philly311.my.salesforce-sites.com/Articles/'
@@ -59,7 +59,12 @@ export type IngestDocument = {
   }
 }
 
-const parseKbHtml = pipeline(cleanWhitespace(), toMarkdown())
+// NOTE: remove('table') strips tables entirely. Salesforce Knowledge articles
+// use tables as formatting scaffolds, and Turndown's GFM fallback emits raw
+// HTML for tables whose cells contain block-level content (lists, divs). If a
+// future search-quality eval shows we're missing useful table content, revisit
+// this decision — see the Known Limitations section of the plan.
+const parseKbHtml = pipeline(cleanWhitespace(), remove('table'), toMarkdown())
 
 export async function transform(raw: RawArticle): Promise<IngestDocument | null> {
   let parsed
