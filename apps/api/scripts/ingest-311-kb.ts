@@ -38,7 +38,7 @@ export type RawArticleListItem = {
 }
 
 export type RawArticle = RawArticleListItem & {
-  content: string
+  content: string | null
 }
 
 export type ArticleListPage = {
@@ -46,6 +46,8 @@ export type ArticleListPage = {
   nextLink: string | null
 }
 
+// Matches RFC 8288 Link headers of the form `<url>; rel="next"` with
+// double-quoted rel values — the shape Salesforce Communities emits.
 const LINK_NEXT_RE = /<([^>]+)>;\s*rel="next"/
 
 export async function fetchArticleList(
@@ -89,9 +91,16 @@ export async function* iterateArticleIds(
     const page = await fetchArticleList(base, apiKey, offset, limit)
     for (const a of page.articles) yield a
     if (!page.nextLink) return
-    // Parse offset from the next link to avoid assuming fixed-stride pagination.
-    const nextOffset = Number(new URL(page.nextLink).searchParams.get('offset'))
-    if (!Number.isFinite(nextOffset) || nextOffset <= offset) return
+    // Parse offset from the next link, resolving relative URLs against base.
+    // We don't assume fixed-stride pagination — if upstream ever changes the
+    // stride, this still advances correctly.
+    const nextUrl = new URL(page.nextLink, base)
+    const nextOffset = Number(nextUrl.searchParams.get('offset'))
+    if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
+      throw new Error(
+        `pagination stalled at offset=${offset}, nextLink=${page.nextLink}`,
+      )
+    }
     offset = nextOffset
   }
 }
