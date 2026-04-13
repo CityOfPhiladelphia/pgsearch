@@ -148,6 +148,103 @@ export async function* iterateArticleIds(
   }
 }
 
+export type IndexInfo = {
+  name: string
+  description?: string
+  // Other fields returned by GET /private/key/admin/indexes/:name exist but
+  // we don't destructure specifics — ensureIndex only needs to know the call
+  // succeeded.
+}
+
+export type CreateIndexResponse = {
+  name: string
+  index_key: string
+  search_key: string
+  created_at: string
+}
+
+export type IngestResponse = {
+  external_id: string
+  segments: number
+  changed: number
+  unchanged: number
+  status: 'indexed'
+}
+
+export type EnsureIndexResult =
+  | { created: true; index_key: string; search_key: string }
+  | { created: false }
+
+export async function ensureIndex(
+  pgsearchBase: string,
+  adminKey: string,
+  name: string,
+): Promise<EnsureIndexResult> {
+  const getRes = await fetch(`${pgsearchBase}/private/key/admin/indexes/${name}`, {
+    headers: { 'x-api-key': adminKey },
+  })
+  if (getRes.status === 200) {
+    return { created: false }
+  }
+  if (getRes.status !== 404) {
+    throw new Error(`getIndex unexpected status ${getRes.status}: ${await getRes.text()}`)
+  }
+  const createRes = await fetch(`${pgsearchBase}/private/key/admin/indexes`, {
+    method: 'POST',
+    headers: {
+      'x-api-key': adminKey,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      description: 'Philly 311 knowledge base articles (Salesforce Knowledge export)',
+    }),
+  })
+  if (!createRes.ok) {
+    throw new Error(`createIndex failed ${createRes.status}: ${await createRes.text()}`)
+  }
+  const created = (await createRes.json()) as CreateIndexResponse
+  return {
+    created: true,
+    index_key: created.index_key,
+    search_key: created.search_key,
+  }
+}
+
+export async function pushDocument(
+  pgsearchBase: string,
+  indexName: string,
+  indexKey: string,
+  doc: IngestDocument,
+): Promise<IngestResponse> {
+  const res = await fetch(`${pgsearchBase}/public/index/${indexName}/documents`, {
+    method: 'POST',
+    headers: {
+      'x-index-key': indexKey,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(doc),
+  })
+  if (!res.ok) {
+    throw new Error(`ingest failed for ${doc.external_id} ${res.status}: ${await res.text()}`)
+  }
+  return (await res.json()) as IngestResponse
+}
+
+export async function refreshIndex(
+  pgsearchBase: string,
+  adminKey: string,
+  indexName: string,
+): Promise<void> {
+  const res = await fetch(`${pgsearchBase}/private/key/admin/indexes/${indexName}/refresh`, {
+    method: 'POST',
+    headers: { 'x-api-key': adminKey },
+  })
+  if (!res.ok) {
+    throw new Error(`refresh failed ${res.status}: ${await res.text()}`)
+  }
+}
+
 async function main(): Promise<void> {
   const env = loadEnv()
   console.log(`[ingest-311-kb] walking article catalog...`)
