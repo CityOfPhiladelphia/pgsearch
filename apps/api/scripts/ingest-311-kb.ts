@@ -2,6 +2,7 @@
 // ABOUTME: Exports fetch/transform/push as pure functions so a future scheduled runner can reuse them.
 
 import { pathToFileURL } from 'node:url'
+import { pipeline, cleanWhitespace, toMarkdown } from '@phila/search-parse'
 
 const REQUIRED_ENV = ['KB_API_BASE', 'KB_API_KEY', 'PGSEARCH_API_BASE', 'PGSEARCH_ADMIN_KEY'] as const
 export const ARTICLE_URL_BASE = 'https://philly311.my.salesforce-sites.com/Articles/'
@@ -44,6 +45,43 @@ export type RawArticle = RawArticleListItem & {
 export type ArticleListPage = {
   articles: RawArticleListItem[]
   nextLink: string | null
+}
+
+export type IngestDocument = {
+  external_id: string
+  title: string
+  body: string
+  metadata: {
+    source: 'phila-311-kb'
+    source_slug: string
+    source_url: string
+    last_published_at: string
+  }
+}
+
+const parseKbHtml = pipeline(cleanWhitespace(), toMarkdown())
+
+export async function transform(raw: RawArticle): Promise<IngestDocument | null> {
+  let parsed
+  try {
+    parsed = await parseKbHtml(raw.content ?? '')
+  } catch (err) {
+    console.warn(`[ingest-311-kb] parse failed for ${raw.id}:`, err instanceof Error ? err.message : err)
+    return null
+  }
+  const body = parsed.body.trim()
+  if (body.length === 0) return null
+  return {
+    external_id: raw.id,
+    title: raw.title,
+    body,
+    metadata: {
+      source: 'phila-311-kb',
+      source_slug: raw.url,
+      source_url: `${ARTICLE_URL_BASE}${raw.url}`,
+      last_published_at: raw.lastPublishedAt,
+    },
+  }
 }
 
 // Matches RFC 8288 Link headers of the form `<url>; rel="next"` with
