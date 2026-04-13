@@ -57,13 +57,13 @@ The `url` field is a slug (not a full URL). The canonical article URL is constru
 
 **Environment:** pgsearch dev (`https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev`) — matches the existing manual search page at `apps/api/dev/search.html`.
 
-**Config:** defaults from `packages/api/src/config.ts`. We have no signal yet to justify tuning.
+**Config:** defaults from `apps/api/config.ts`. We have no signal yet to justify tuning.
 
 **Setup flow (`ensureIndex`):**
 1. `GET /private/key/admin/indexes/knowledge-311`. If it exists, return its info with `created: false`.
 2. Otherwise `POST /private/key/admin/indexes` with `{ name: "knowledge-311", description: "Philly 311 knowledge base articles (Salesforce Knowledge export)" }` and return `created: true` along with the freshly generated `index_key` and `search_key`.
 
-On first run the script prints a visible banner with both keys — they are bcrypt-hashed server-side and cannot be retrieved again. On subsequent runs the script reads `KNOWLEDGE_311_INDEX_KEY` from env. This mirrors the pattern in `scripts/bootstrap-dev-index.ts`.
+On first run the script prints a visible banner with both keys — they are bcrypt-hashed server-side and cannot be retrieved again. On subsequent runs the script reads `KNOWLEDGE_311_INDEX_KEY` from env. This mirrors the pattern in `apps/api/scripts/bootstrap-dev-index.ts`, with one intentional divergence: that script has a `BOOTSTRAP_UNSAFE` guard that refuses to run against non-localhost targets. This one does not — it explicitly targets the remote dev URL. Do not "align" this script with the bootstrap guard; remote dev is the target.
 
 ## Document mapping
 
@@ -112,21 +112,27 @@ Exported pure functions (each independently testable, each extractable to a modu
 fetchArticleList(base, apiKey, offset, limit): Promise<{ articles, nextLink }>
 fetchArticle(base, apiKey, id):                Promise<RawArticle>
 transform(raw):                                IngestDocument | null
-ensureIndex(pgsearchBase, adminKey, name):     Promise<{ index_key, search_key, created }>
+ensureIndex(pgsearchBase, adminKey, name):     Promise<EnsureIndexResult>
+// EnsureIndexResult:
+//   { created: true,  index_key, search_key }   // fresh create: keys present
+//   { created: false }                            // already existed: keys unretrievable
 pushDocument(pgsearchBase, indexKey, doc):     Promise<IngestResponse>
 refreshIndex(pgsearchBase, adminKey, name):    Promise<void>
 ```
 
 A bottom-of-file `main()` wires them together and is invoked only when the file is the entry point (`if (import.meta.url === ...)`), so the module stays importable without running the CLI.
 
-**Environment variables** (all required, fail-fast on startup if any are missing):
-```
-KB_API_BASE              https://yw32n3h725.execute-api.us-east-1.amazonaws.com/test
-KB_API_KEY               <311 knowledge articles API key>
-PGSEARCH_API_BASE        https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev
-PGSEARCH_ADMIN_KEY       <dev admin key>
-KNOWLEDGE_311_INDEX_KEY  <only required on re-runs, after first-run banner>
-```
+**Environment variables:**
+
+| Var | When required | Value |
+|---|---|---|
+| `KB_API_BASE` | always | `https://yw32n3h725.execute-api.us-east-1.amazonaws.com/test` |
+| `KB_API_KEY` | always | 311 knowledge articles API key |
+| `PGSEARCH_API_BASE` | always | `https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev` |
+| `PGSEARCH_ADMIN_KEY` | always | dev admin key |
+| `KNOWLEDGE_311_INDEX_KEY` | only when the index already exists | captured from the first-run banner |
+
+The four "always" vars are validated at startup; missing any is a fail-fast exit. `KNOWLEDGE_311_INDEX_KEY` is validated later, only after `ensureIndex` returns `created: false` — on a first run the index does not yet exist, so requiring the key up front would be a chicken-and-egg problem.
 
 **Invocation:** `pnpm --filter @phila/pgsearch-api ingest:311-kb`, matching the style used for `bootstrap-dev-index.ts`.
 
