@@ -1,6 +1,8 @@
 // ABOUTME: One-shot ingestion of Philly 311 Salesforce Knowledge articles into a pgsearch index.
 // ABOUTME: Exports fetch/transform/push as pure functions so a future scheduled runner can reuse them.
 
+import { pathToFileURL } from 'node:url'
+
 const REQUIRED_ENV = ['KB_API_BASE', 'KB_API_KEY', 'PGSEARCH_API_BASE', 'PGSEARCH_ADMIN_KEY'] as const
 export const ARTICLE_URL_BASE = 'https://philly311.my.salesforce-sites.com/Articles/'
 export const INDEX_NAME = 'knowledge-311'
@@ -36,7 +38,7 @@ async function main(): Promise<void> {
   console.log(`  index:      ${INDEX_NAME}`)
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('[ingest-311-kb] failed:', err instanceof Error ? err.message : err)
     process.exit(1)
