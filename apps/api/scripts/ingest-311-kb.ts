@@ -198,6 +198,18 @@ export async function ensureIndex(
     body: JSON.stringify({
       name,
       description: 'Philly 311 knowledge base articles (Salesforce Knowledge export)',
+      // The default `local` embedding provider is a dev-machine-only shim.
+      // Deployed Lambdas bundle only the bedrock adapter, so any index
+      // created with defaults gets 500 errors on every ingest. Pin to the
+      // same Titan v2 config as the phila-services-programs index.
+      config: {
+        embedding: {
+          provider: 'bedrock',
+          model: 'amazon.titan-embed-text-v2:0',
+          region: 'us-east-1',
+          dimensions: 1024,
+        },
+      },
     }),
   })
   if (!createRes.ok) {
