@@ -247,14 +247,82 @@ export async function refreshIndex(
 
 async function main(): Promise<void> {
   const env = loadEnv()
-  console.log(`[ingest-311-kb] walking article catalog...`)
-  let count = 0
-  for await (const item of iterateArticleIds(env.kbApiBase, env.kbApiKey)) {
-    void item
-    count++
-    if (count % 50 === 0) console.log(`  ...${count}`)
+
+  console.log(`[ingest-311-kb] ensuring index '${INDEX_NAME}' at ${env.pgsearchApiBase}`)
+  const ensured = await ensureIndex(env.pgsearchApiBase, env.pgsearchAdminKey, INDEX_NAME)
+
+  let indexKey: string
+  if (ensured.created) {
+    console.log(``)
+    console.log(`  ================================================================`)
+    console.log(`  >>> SAVE THESE KEYS — they will not be retrievable again <<<`)
+    console.log(`  index_key:  ${ensured.index_key}`)
+    console.log(`  search_key: ${ensured.search_key}`)
+    console.log(`  ================================================================`)
+    console.log(``)
+    console.log(`  Paste search_key into apps/api/dev/search.html for evaluation.`)
+    console.log(`  Set KNOWLEDGE_311_INDEX_KEY=${ensured.index_key} for future re-runs.`)
+    console.log(``)
+    indexKey = ensured.index_key
+  } else {
+    if (!env.knowledge311IndexKey) {
+      console.error(
+        `[ingest-311-kb] index '${INDEX_NAME}' already exists but KNOWLEDGE_311_INDEX_KEY is not set.`,
+      )
+      console.error(`[ingest-311-kb] keys are bcrypt-hashed and unretrievable; use the value from the first-run banner.`)
+      process.exit(1)
+    }
+    indexKey = env.knowledge311IndexKey
   }
-  console.log(`[ingest-311-kb] total articles: ${count}`)
+
+  console.log(`[ingest-311-kb] collecting article ids...`)
+  const ids: RawArticleListItem[] = []
+  for await (const item of iterateArticleIds(env.kbApiBase, env.kbApiKey)) {
+    ids.push(item)
+  }
+  const total = ids.length
+  console.log(`[ingest-311-kb] catalog size: ${total}`)
+
+  let indexed = 0
+  let skipped = 0
+  let failed = 0
+  const startedAt = Date.now()
+
+  for (let i = 0; i < total; i++) {
+    const item = ids[i]
+    try {
+      const raw = await fetchArticle(env.kbApiBase, env.kbApiKey, item.id)
+      const doc = await transform(raw)
+      if (doc === null) {
+        skipped++
+        console.warn(`  skip ${item.id}: empty body`)
+      } else {
+        await pushDocument(env.pgsearchApiBase, INDEX_NAME, indexKey, doc)
+        indexed++
+      }
+    } catch (err) {
+      failed++
+      console.warn(`  skip ${item.id}: ${err instanceof Error ? err.message : err}`)
+    }
+    if ((i + 1) % 50 === 0) {
+      console.log(`[${i + 1}/${total}] indexed=${indexed} skipped=${skipped} failed=${failed}`)
+    }
+  }
+
+  console.log(`[ingest-311-kb] refreshing index`)
+  try {
+    await refreshIndex(env.pgsearchApiBase, env.pgsearchAdminKey, INDEX_NAME)
+  } catch (err) {
+    console.warn(`[ingest-311-kb] refresh failed (documents still indexed):`, err instanceof Error ? err.message : err)
+  }
+
+  const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
+  console.log(``)
+  console.log(`[ingest-311-kb] done in ${elapsedSec}s`)
+  console.log(`  total:   ${total}`)
+  console.log(`  indexed: ${indexed}`)
+  console.log(`  skipped: ${skipped}`)
+  console.log(`  failed:  ${failed}`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
