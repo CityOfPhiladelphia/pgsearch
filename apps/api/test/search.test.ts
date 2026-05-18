@@ -184,6 +184,8 @@ describe('search', () => {
       for (const [, count] of counts) {
         expect(count).toBeLessThanOrEqual(3)
       }
+      // Prove the cap actually enables multiple chunks (would fail under the old 1-per-doc dedup)
+      expect(counts.get('multi-cap') ?? 0).toBeGreaterThan(1)
     })
 
     it('respects per-doc cap when one doc has many strong segments', async () => {
@@ -197,6 +199,8 @@ describe('search', () => {
       for (const [, count] of counts) {
         expect(count).toBeLessThanOrEqual(2)
       }
+      // multi-cap has many matching segments; cap=2 should yield exactly 2 (proves the cap fires)
+      expect(counts.get('multi-cap') ?? 0).toBe(2)
     })
   })
 })
