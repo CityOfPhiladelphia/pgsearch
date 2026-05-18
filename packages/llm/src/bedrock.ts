@@ -15,7 +15,7 @@ export function createBedrockLlmAdapter(config: BedrockLlmConfig): LlmAdapter {
     async complete(input: LlmCompleteInput): Promise<LlmCompleteResult> {
       if (!config.model.startsWith('anthropic.')) {
         throw new Error(
-          `BedrockLlmAdapter currently supports only anthropic.* models; got '${config.model}'`
+          `Bedrock LLM currently supports only anthropic.* models; got '${config.model}'`
         )
       }
 
