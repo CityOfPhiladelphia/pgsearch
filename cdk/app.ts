@@ -5,6 +5,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { LambdaPostgresApi, Confidentiality, Environment, applyNagChecks, applyStandardTags } from '@phila/constructs';
+import { NagSuppressions } from 'cdk-nag';
 
 const app = new App();
 
@@ -88,6 +89,34 @@ pgsearchApi.api.lambda.function.addToRolePolicy(
       `arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
     ],
   }),
+);
+
+// Anthropic models on Bedrock are delivered via AWS Marketplace. The execution
+// role needs marketplace subscription permissions to invoke them — Bedrock
+// runs that check separately from bedrock:InvokeModel. These actions are
+// account-level and do not accept resource ARNs, so '*' is the only valid
+// resource. Suppress the cdk-nag wildcard rule with evidence below.
+pgsearchApi.api.lambda.function.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['aws-marketplace:ViewSubscriptions', 'aws-marketplace:Subscribe'],
+    resources: ['*'],
+  }),
+);
+NagSuppressions.addResourceSuppressions(
+  pgsearchApi.api.lambda.function.role!,
+  [
+    {
+      id: 'AwsSolutions-IAM5',
+      reason:
+        'aws-marketplace:ViewSubscriptions and Subscribe are required for Bedrock Anthropic model invocation and only accept "*" as the resource (account-level actions).',
+      appliesTo: [
+        'Action::aws-marketplace:ViewSubscriptions',
+        'Action::aws-marketplace:Subscribe',
+        'Resource::*',
+      ],
+    },
+  ],
+  true,
 );
 
 // Disable API Gateway stage-level response caching. @phila/constructs
