@@ -19,6 +19,8 @@ export function createTestLlmAdapter(options: TestAdapterOptions = {}): LlmAdapt
       }
       return {
         text,
+        // Character counts stand in for token counts so test assertions stay deterministic
+        // without a tokenizer. Callers must not treat these numbers as real tokenization.
         usage: {
           input_tokens: input.system.length + userText.length,
           output_tokens: text.length,

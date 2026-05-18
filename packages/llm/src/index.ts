@@ -8,4 +8,5 @@ export type {
   LlmCompleteResult,
 } from './adapter'
 export { createTestLlmAdapter } from './test'
+export type { TestAdapterOptions } from './test'
 export { createBedrockLlmAdapter } from './bedrock'
