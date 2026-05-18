@@ -12,7 +12,6 @@ describe('database schema', () => {
 
   afterAll(async () => {
     await teardownSchema()
-    await closePool()
   })
 
   it('creates search_indexes table', async () => {
@@ -80,5 +79,50 @@ describe('database schema', () => {
     const pool = await getTestPool()
     const result = await pool.query('SELECT COUNT(*) FROM term_document_frequencies')
     expect(parseInt(result.rows[0].count)).toBe(0)
+  })
+})
+
+describe('migration v2 — rag', () => {
+  beforeAll(async () => {
+    await teardownSchema()
+    await setupSchema()
+  })
+
+  afterAll(async () => {
+    await teardownSchema()
+    await closePool()
+  })
+
+  it('adds rag_key_hash column to search_indexes', async () => {
+    const pool = await getTestPool()
+    const result = await pool.query(`
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'search_indexes' AND column_name = 'rag_key_hash'
+    `)
+    expect(result.rows.length).toBe(1)
+    expect(result.rows[0].is_nullable).toBe('YES')
+  })
+
+  it('creates rag_prompts table with expected columns', async () => {
+    const pool = await getTestPool()
+    const result = await pool.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'rag_prompts'
+      ORDER BY ordinal_position
+    `)
+    const columns = result.rows.map((r: { column_name: string }) => r.column_name)
+    expect(columns).toEqual(expect.arrayContaining([
+      'prompt_id', 'index_id', 'name', 'content', 'created_at', 'updated_at',
+    ]))
+  })
+
+  it('enforces unique (index_id, name) on rag_prompts', async () => {
+    const pool = await getTestPool()
+    const result = await pool.query(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'rag_prompts' AND indexdef LIKE '%UNIQUE%(index_id, name)%'
+    `)
+    expect(result.rows.length).toBeGreaterThan(0)
   })
 })

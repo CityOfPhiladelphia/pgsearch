@@ -32,6 +32,7 @@ export async function teardownSchema(): Promise<void> {
   await p.query('DROP MATERIALIZED VIEW IF EXISTS term_document_frequencies CASCADE')
   await p.query('DROP TABLE IF EXISTS search_segments CASCADE')
   await p.query('DROP TABLE IF EXISTS search_documents CASCADE')
+  await p.query('DROP TABLE IF EXISTS rag_prompts CASCADE')
   await p.query('DROP TABLE IF EXISTS search_indexes CASCADE')
   await p.query('DROP TABLE IF EXISTS schema_migrations CASCADE')
   resetMigrationState()
@@ -46,6 +47,7 @@ export async function cleanupTestData(): Promise<void> {
   }
   await p.query('DELETE FROM search_segments')
   await p.query('DELETE FROM search_documents')
+  await p.query('DELETE FROM rag_prompts')
   await p.query('DELETE FROM search_indexes')
 }
 

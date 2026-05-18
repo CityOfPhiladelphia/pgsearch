@@ -78,3 +78,21 @@ FROM (
 GROUP BY sub.index_id, sub.term;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
+
+-- RAG support: nullable hash enables/disables RAG per index; null means RAG is disabled.
+ALTER TABLE search_indexes
+  ADD COLUMN IF NOT EXISTS rag_key_hash TEXT;
+
+-- Stores named prompt templates scoped to an index.
+-- Content is JSONB to support future composition fields without schema changes.
+CREATE TABLE IF NOT EXISTS rag_prompts (
+    prompt_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    index_id    INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    content     JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (index_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prompts_index_id ON rag_prompts (index_id);
