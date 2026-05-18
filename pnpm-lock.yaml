@@ -23,9 +23,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@phila/bedrock-client':
+        specifier: workspace:*
+        version: link:../../packages/bedrock-client
       '@phila/db-postgres':
         specifier: ^0.0.8
         version: 0.0.8
+      '@phila/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@phila/search-embeddings':
         specifier: workspace:*
         version: link:../../packages/embeddings
