@@ -60,7 +60,7 @@ describe('prompts service', () => {
     await createPrompt(pool, indexId, 'b', sampleContent)
     const list = await listPrompts(pool, indexId)
     expect(list.length).toBe(2)
-    expect(list.map(p => p.name).sort()).toEqual(['a', 'b'])
+    expect(list.map(p => p.name)).toEqual(['a', 'b'])
   })
 
   it('enforces unique (index_id, name)', async () => {
