@@ -109,6 +109,17 @@ describe('indexes service', () => {
     it('mintRagKey throws for missing index', async () => {
       await expect(mintRagKey(pool, 'nope')).rejects.toThrow(/not found/i)
     })
+
+    it('revokeRagKey throws for missing index', async () => {
+      await expect(revokeRagKey(pool, 'nope')).rejects.toThrow(/not found/i)
+    })
+
+    it('revokeRagKey is idempotent — no error when key was never minted', async () => {
+      await createIndex(pool, { name: 'never-minted' })
+      await expect(revokeRagKey(pool, 'never-minted')).resolves.toBeUndefined()
+      const index = await getIndex(pool, 'never-minted')
+      expect(index!.rag_key_hash).toBeNull()
+    })
   })
 })
 
