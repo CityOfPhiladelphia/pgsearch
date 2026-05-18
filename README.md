@@ -11,6 +11,7 @@ PostgreSQL hybrid search service combining BM25F full-text keyword scoring with 
 - **Document** — a searchable unit identified by `external_id`. Has a title, body text, and optional metadata. The body is automatically split into segments for embedding.
 - **Segment** — a chunk of document body (~500 words). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
 - **Hybrid search** — each query runs two passes: keyword matching (BM25F on tsvectors) and semantic similarity (pgvector cosine distance). Results are combined using Reciprocal Rank Fusion (RRF) for robust ranking.
+- **RAG** — `/public/rag/:name?prompt=<name>` retrieves the top chunks for a question and asks an LLM to synthesize an answer with inline citations. Prompts are per-index DB entities; RAG access is gated by a separate `x-rag-key`.
 
 ## Quick start
 
@@ -47,6 +48,7 @@ See [Getting Started](docs/getting-started.md) for a full walkthrough.
 | [Search](docs/search.md) | How hybrid search works, scoring parameters, tuning guidance. |
 | [Ingestion](docs/ingestion.md) | Document pipeline, the parse library, the crawler, known pitfalls. |
 | [Architecture](docs/architecture.md) | Database schema, multi-tenancy, authentication, design decisions. |
+| [RAG](docs/rag.md) | Synthesize answers with citations using stored prompts and the hybrid retrieval pipeline. |
 
 ## Project structure
 

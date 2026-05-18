@@ -116,6 +116,20 @@ Only changed segments are re-embedded on upsert. Each segment is SHA256-hashed b
 
 ---
 
+## RAG Pipeline
+
+RAG layers atop hybrid search. `/public/rag/:name` retrieves the top chunks for the latest question, renders them as numbered `Source [N]:` blocks, and sends them to an LLM along with a stored system prompt. The LLM is instructed to cite using `[N]` markers; the response parses these into a structured `citations` array.
+
+Prompts are first-class per-index entities stored in `rag_prompts` as JSONB. A prompt carries the system text, model ID, generation params, and retrieval params (mode, limit, max_chunks_per_doc, score floors). The API exposes prompt CRUD under `x-index-key`. The RAG endpoint itself is gated by a separate `x-rag-key`, minted lazily via admin — indexes that don't use RAG never carry an unused credential.
+
+The `hybridSearch` function gained a `maxChunksPerDoc` option (default 1, preserving original search behavior) so RAG can pull multiple segments from the same document while still capping any single source's share of the context window.
+
+LLM access goes through the `LlmAdapter` interface in `packages/llm`, mirroring `EmbeddingAdapter`. The Bedrock adapter calls Claude via the Anthropic Messages API. Both adapters share `packages/bedrock-client` for lazy, region-memoized SDK client construction.
+
+See `docs/rag.md` for the user-facing guide.
+
+---
+
 ## Design Decisions and Trade-offs
 
 ### 1. PostgreSQL over a dedicated search engine
