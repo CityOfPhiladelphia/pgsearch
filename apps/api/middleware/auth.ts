@@ -85,7 +85,7 @@ export const ragAuth = createMiddleware<AppEnv>(async (c, next) => {
   const index = await getIndex(pool, indexName)
   if (!index) return apiError(c, 'NOT_FOUND', `Index '${indexName}' not found`)
   if (!index.rag_key_hash) {
-    return apiError(c, 'UNAUTHORIZED', 'RAG is not enabled for this index')
+    return apiError(c, 'FORBIDDEN', 'RAG is not enabled for this index')
   }
   if (!(await verifyKey(ragKey, index.rag_key_hash))) {
     return apiError(c, 'UNAUTHORIZED', 'Invalid RAG key')
