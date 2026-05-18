@@ -72,19 +72,20 @@ webAcl.addPropertyOverride(
 );
 
 // Allow the Lambda to call Bedrock: Titan Embed v2 for per-index embeddings
-// and Claude 3.5 Haiku via the US inference profile for RAG synthesis.
+// and Claude Haiku 4.5 via the US inference profile for RAG synthesis.
 // Inference profiles require both the profile ARN and InvokeModel on the
-// underlying foundation model in every region the profile may route to.
+// underlying foundation model in every region the profile may route to
+// (us-east-1, us-east-2, us-west-2 for the US profile).
 // cdk-nag rejects wildcards — list every ARN explicitly.
 pgsearchApi.api.lambda.function.addToRolePolicy(
   new iam.PolicyStatement({
     actions: ['bedrock:InvokeModel'],
     resources: [
       `arn:aws:bedrock:${stack.region}::foundation-model/amazon.titan-embed-text-v2:0`,
-      `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0`,
-      `arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0`,
-      `arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0`,
-      `arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0`,
+      `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
+      `arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
+      `arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
+      `arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
     ],
   }),
 );
