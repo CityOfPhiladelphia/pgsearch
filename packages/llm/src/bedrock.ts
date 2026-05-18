@@ -13,9 +13,12 @@ export function createBedrockLlmAdapter(config: BedrockLlmConfig): LlmAdapter {
   return {
     model: config.model,
     async complete(input: LlmCompleteInput): Promise<LlmCompleteResult> {
-      if (!config.model.startsWith('anthropic.')) {
+      // Accept both raw model IDs (anthropic.foo) and regional inference profile IDs
+      // (us.anthropic.foo, global.anthropic.foo). Newer Claude models require profiles;
+      // older ones can be invoked directly.
+      if (!/^(?:[a-z]+\.)?anthropic\./.test(config.model)) {
         throw new Error(
-          `Bedrock LLM currently supports only anthropic.* models; got '${config.model}'`
+          `Bedrock LLM currently supports only anthropic.* models or <region>.anthropic.* inference profiles; got '${config.model}'`
         )
       }
 

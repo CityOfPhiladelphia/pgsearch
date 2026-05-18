@@ -6,10 +6,11 @@ import { createBedrockLlmAdapter } from '@phila/llm'
 import type { PromptContent } from '../types'
 
 export function getLlmAdapter(content: PromptContent): LlmAdapter {
-  if (content.model.startsWith('anthropic.')) {
+  // Accept raw anthropic.* model IDs and regional inference profile IDs (us.anthropic.*, global.anthropic.*).
+  if (/^(?:[a-z]+\.)?anthropic\./.test(content.model)) {
     return createBedrockLlmAdapter({ model: content.model })
   }
   throw new Error(
-    `LLM model '${content.model}' is not supported. Only 'anthropic.*' models are available in this deployment.`,
+    `LLM model '${content.model}' is not supported. Only anthropic.* models and <region>.anthropic.* inference profiles are available in this deployment.`,
   )
 }
