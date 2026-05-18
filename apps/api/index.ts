@@ -7,6 +7,7 @@ import { handle } from 'hono/aws-lambda'
 import { adminRoutes } from './routes/admin'
 import { ingestRoutes } from './routes/ingest'
 import { searchRoutes } from './routes/search'
+import { promptsRoutes } from './routes/prompts'
 import { healthRoutes } from './routes/health'
 import { getPool, registerVectorType } from './db/pool'
 import { runMigrations } from './db/migrate'
@@ -30,6 +31,7 @@ app.route('/', healthRoutes)
 app.route('/', adminRoutes)
 app.route('/', ingestRoutes)
 app.route('/', searchRoutes)
+app.route('/', promptsRoutes)
 
 app.onError((err, c) => {
   console.error('Unhandled error:', err)
