@@ -53,15 +53,13 @@ export async function runRag(
     temperature: promptContent.temperature,
   })
 
-  // Parse [N] markers from answer; keep only unique, in-range, sorted.
-  // Strip "Source [N]:" context header labels before scanning so they don't
-  // produce false citation hits (context headers are prompting scaffolding, not citations).
+  // Parse [N] markers from the answer; keep only unique, in-range, sorted.
+  // Strip "Source [N]:" labels because a real model that quotes the context format
+  // back ("According to Source [1]:...") would otherwise produce a false citation hit.
   const answerForCitationScan = completion.text.replace(/Source \[\d+\]:/g, 'Source:')
-  const markerRegex = /\[(\d+)\]/g
   const markerSet = new Set<number>()
-  let m
-  while ((m = markerRegex.exec(answerForCitationScan)) !== null) {
-    const n = parseInt(m[1], 10)
+  for (const match of answerForCitationScan.matchAll(/\[(\d+)\]/g)) {
+    const n = parseInt(match[1], 10)
     if (n >= 1 && n <= chunks.length) markerSet.add(n)
   }
   const markers = Array.from(markerSet).sort((a, b) => a - b)

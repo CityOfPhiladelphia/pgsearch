@@ -5,6 +5,7 @@ import type { LlmAdapter, LlmCompleteInput, LlmCompleteResult } from './adapter'
 
 export interface TestAdapterOptions {
   withCitations?: number[]
+  responseText?: string
 }
 
 export function createTestLlmAdapter(options: TestAdapterOptions = {}): LlmAdapter {
@@ -13,7 +14,9 @@ export function createTestLlmAdapter(options: TestAdapterOptions = {}): LlmAdapt
     async complete(input: LlmCompleteInput): Promise<LlmCompleteResult> {
       const latestUser = [...input.messages].reverse().find(m => m.role === 'user')
       const userText = latestUser ? latestUser.content : ''
-      let text = `[test] ${userText}`
+      let text = options.responseText !== undefined
+        ? options.responseText
+        : `[test] ${userText}`
       if (options.withCitations) {
         text += ' ' + options.withCitations.map(n => `[${n}]`).join(' ')
       }

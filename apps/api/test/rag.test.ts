@@ -93,7 +93,9 @@ describe('runRag', () => {
   })
 
   it('drops citation markers pointing to nonexistent source numbers', async () => {
-    const llm = createTestLlmAdapter({ withCitations: [99] })
+    // Use an explicit response text (not the echo default) so this test exercises
+    // citation parsing in isolation from the test adapter's echo behavior.
+    const llm = createTestLlmAdapter({ responseText: 'see [99]' })
     const result = await runRag(pool, indexId, embedAdapter, llm, {
       promptName: 'navigator',
       promptContent,
