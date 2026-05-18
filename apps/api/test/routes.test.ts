@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import { ingestRoutes } from '../routes/ingest'
 import { searchRoutes } from '../routes/search'
 import { promptsRoutes } from '../routes/prompts'
+import { ragRoutes } from '../routes/rag'
 
 // Minimal app that wires only the routes under test, skipping the DB + migration middleware
 // from the full app. The auth middleware short-circuits on missing header before any DB access,
@@ -56,6 +57,31 @@ describe('search route wiring', () => {
 
   it('does not expose /search/:name outside /public/*', async () => {
     const res = await app.request('/search/any-index?q=hello')
+    expect(res.status).toBe(404)
+  })
+})
+
+const ragApp = new Hono()
+ragApp.route('/', ragRoutes)
+
+describe('rag route wiring', () => {
+  it('mounts POST /public/rag/:name behind ragAuth (missing key → 401)', async () => {
+    const res = await ragApp.request('/public/rag/any-index?prompt=any', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'q' }),
+    })
+    expect(res.status).toBe(401)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
+  it('does not expose /rag/:name outside /public/*', async () => {
+    const res = await ragApp.request('/rag/any-index?prompt=any', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'q' }),
+    })
     expect(res.status).toBe(404)
   })
 })
