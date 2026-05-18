@@ -89,3 +89,30 @@ export async function deleteIndex(pool: Pool, name: string): Promise<void> {
 
   await pool.query('DELETE FROM search_indexes WHERE name = $1', [name])
 }
+
+export interface MintRagKeyResponse {
+  rag_key: string
+}
+
+export async function mintRagKey(pool: Pool, name: string): Promise<MintRagKeyResponse> {
+  const existing = await getIndex(pool, name)
+  if (!existing) throw new Error(`Index '${name}' not found`)
+
+  const ragKey = generateKey('rag')
+  const ragKeyHash = await hashKey(ragKey)
+
+  await pool.query(
+    'UPDATE search_indexes SET rag_key_hash = $1, updated_at = NOW() WHERE name = $2',
+    [ragKeyHash, name],
+  )
+  return { rag_key: ragKey }
+}
+
+export async function revokeRagKey(pool: Pool, name: string): Promise<void> {
+  const existing = await getIndex(pool, name)
+  if (!existing) throw new Error(`Index '${name}' not found`)
+  await pool.query(
+    'UPDATE search_indexes SET rag_key_hash = NULL, updated_at = NOW() WHERE name = $1',
+    [name],
+  )
+}

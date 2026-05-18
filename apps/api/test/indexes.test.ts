@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
-import { createIndex, getIndex, listIndexes, deleteIndex, updateIndex } from '../services/indexes'
+import { createIndex, getIndex, listIndexes, deleteIndex, updateIndex, mintRagKey, revokeRagKey } from '../services/indexes'
 import { verifyKey } from '../middleware/auth'
 import type { Pool } from 'pg'
 
@@ -68,6 +68,47 @@ describe('indexes service', () => {
     expect(index!.config.embedding.model).toBe('new-model')
     expect(index!.config.embedding.provider).toBe('local') // default preserved
     expect(index!.config.embedding.dimensions).toBe(384) // default preserved
+  })
+
+  describe('RAG key management', () => {
+    it('rag_key_hash is null on a freshly created index', async () => {
+      await createIndex(pool, { name: 'no-rag' })
+      const index = await getIndex(pool, 'no-rag')
+      expect(index!.rag_key_hash).toBeNull()
+    })
+
+    it('mintRagKey returns a plaintext key and persists its hash', async () => {
+      await createIndex(pool, { name: 'with-rag' })
+      const result = await mintRagKey(pool, 'with-rag')
+      expect(result.rag_key.startsWith('rag_')).toBe(true)
+
+      const index = await getIndex(pool, 'with-rag')
+      expect(index!.rag_key_hash).not.toBeNull()
+      expect(await verifyKey(result.rag_key, index!.rag_key_hash!)).toBe(true)
+    })
+
+    it('mintRagKey rotates an existing key', async () => {
+      await createIndex(pool, { name: 'rotate' })
+      const first = await mintRagKey(pool, 'rotate')
+      const second = await mintRagKey(pool, 'rotate')
+      expect(first.rag_key).not.toBe(second.rag_key)
+
+      const index = await getIndex(pool, 'rotate')
+      expect(await verifyKey(second.rag_key, index!.rag_key_hash!)).toBe(true)
+      expect(await verifyKey(first.rag_key, index!.rag_key_hash!)).toBe(false)
+    })
+
+    it('revokeRagKey nulls the hash', async () => {
+      await createIndex(pool, { name: 'revoke-me' })
+      await mintRagKey(pool, 'revoke-me')
+      await revokeRagKey(pool, 'revoke-me')
+      const index = await getIndex(pool, 'revoke-me')
+      expect(index!.rag_key_hash).toBeNull()
+    })
+
+    it('mintRagKey throws for missing index', async () => {
+      await expect(mintRagKey(pool, 'nope')).rejects.toThrow(/not found/i)
+    })
   })
 })
 
