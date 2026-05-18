@@ -25,6 +25,7 @@ function validateContent(c: any): { ok: true; content: PromptContent } | { ok: f
     if (!(key in c)) return { ok: false, message: `content.${key} is required` }
   }
   if (typeof c.system !== 'string') return { ok: false, message: 'content.system must be a string' }
+  if (typeof c.response_format !== 'string') return { ok: false, message: 'content.response_format must be a string' }
   if (typeof c.model !== 'string') return { ok: false, message: 'content.model must be a string' }
   if (typeof c.max_tokens !== 'number') return { ok: false, message: 'content.max_tokens must be a number' }
   if (typeof c.temperature !== 'number') return { ok: false, message: 'content.temperature must be a number' }
@@ -100,6 +101,7 @@ promptsRoutes.patch('/public/index/:name/prompts/:promptName', async (c) => {
     throw err
   }
   const updated = await getPrompt(pool, index.index_id, promptName)
+  if (!updated) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(updated)
 })
 
