@@ -68,3 +68,30 @@ export const searchAuth = createMiddleware<AppEnv>(async (c, next) => {
   await next()
   return
 })
+
+export const ragAuth = createMiddleware<AppEnv>(async (c, next) => {
+  const ragKey = c.req.header('x-rag-key')
+  if (!ragKey) {
+    return apiError(c, 'UNAUTHORIZED', 'Missing x-rag-key header')
+  }
+  const indexName = c.req.param('name')
+  if (!indexName) {
+    return apiError(c, 'VALIDATION_ERROR', 'Missing index name')
+  }
+
+  const { getIndex } = await import('../services/indexes')
+  const { getPool } = await import('../db/pool')
+  const pool = await getPool()
+  const index = await getIndex(pool, indexName)
+  if (!index) return apiError(c, 'NOT_FOUND', `Index '${indexName}' not found`)
+  if (!index.rag_key_hash) {
+    return apiError(c, 'UNAUTHORIZED', 'RAG is not enabled for this index')
+  }
+  if (!(await verifyKey(ragKey, index.rag_key_hash))) {
+    return apiError(c, 'UNAUTHORIZED', 'Invalid RAG key')
+  }
+
+  c.set('index', index)
+  await next()
+  return
+})
