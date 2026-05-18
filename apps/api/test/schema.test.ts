@@ -90,7 +90,6 @@ describe('migration v2 — rag', () => {
 
   afterAll(async () => {
     await teardownSchema()
-    await closePool()
   })
 
   it('adds rag_key_hash column to search_indexes', async () => {
@@ -125,4 +124,8 @@ describe('migration v2 — rag', () => {
     `)
     expect(result.rows.length).toBeGreaterThan(0)
   })
+})
+
+afterAll(async () => {
+  await closePool()
 })
