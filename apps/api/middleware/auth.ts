@@ -1,5 +1,5 @@
 // ABOUTME: Per-index authentication middleware for pgsearch API.
-// ABOUTME: Verifies index and search keys against bcrypt hashes stored per index.
+// ABOUTME: Verifies index, search, and RAG keys against bcrypt hashes stored per index.
 
 import { createMiddleware } from 'hono/factory'
 import bcrypt from 'bcryptjs'
