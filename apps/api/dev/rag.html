@@ -1,0 +1,183 @@
+<!-- ABOUTME: Static dev tool for manually exercising the pgsearch RAG endpoint. -->
+<!-- ABOUTME: Open via file:// in a browser; never served in production. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pgsearch rag dev</title>
+<style>
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  h1 { font-size: 1.2rem; margin-bottom: 1rem; }
+  .config { background: #f4f4f4; padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem; }
+  .config label { display: block; margin-bottom: 0.5rem; font-size: 12px; color: #555; }
+  .config input { width: 100%; padding: 0.4rem; box-sizing: border-box; font-family: inherit; font-size: 13px; }
+  form.ask { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  form.ask input[type=text] { flex: 1; padding: 0.6rem; font-size: 14px; }
+  form.ask button { padding: 0.6rem 1rem; font-size: 14px; cursor: pointer; }
+  button.reset { background: #fff; border: 1px solid #ccc; }
+  .turn { padding: 0.8rem 0; border-top: 1px solid #e4e4e4; }
+  .turn.user { color: #333; }
+  .turn.assistant .answer { color: #111; }
+  .turn .role { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.3rem; }
+  sup.cite a { color: #0a5fb1; text-decoration: none; padding: 0 2px; }
+  sup.cite a:hover { text-decoration: underline; }
+  .citations { margin-top: 0.6rem; font-size: 12px; color: #555; }
+  .citations ol { padding-left: 1.2rem; margin: 0.3rem 0; }
+  .citations a { color: #0a5fb1; }
+  details.retrieved { margin-top: 0.4rem; font-size: 12px; color: #777; }
+  details.retrieved summary { cursor: pointer; }
+  .usage { font-size: 11px; color: #999; margin-top: 0.4rem; }
+  .error { color: #b00020; padding: 0.6rem; background: #fff4f4; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>pgsearch rag dev</h1>
+
+<div class="config">
+  <label>API base URL <input id="api-base" value="https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev"></label>
+  <label>Index name <input id="index-name" value="phila-services-programs"></label>
+  <label>RAG key <input id="rag-key" type="password" placeholder="rag_..."></label>
+  <label>Prompt name <input id="prompt-name" value="navigator"></label>
+</div>
+
+<form class="ask" onsubmit="event.preventDefault(); ask();">
+  <input type="text" id="q" placeholder="Ask…" autofocus>
+  <button type="submit">Ask</button>
+  <button type="button" class="reset" onclick="resetConversation()">Reset</button>
+</form>
+
+<div id="conversation"></div>
+
+<script>
+  const $apiBase = document.getElementById('api-base');
+  const $indexName = document.getElementById('index-name');
+  const $ragKey = document.getElementById('rag-key');
+  const $promptName = document.getElementById('prompt-name');
+  const $q = document.getElementById('q');
+  const $conversation = document.getElementById('conversation');
+
+  let messages = JSON.parse(localStorage.getItem('pgsearch-rag:messages') || '[]');
+
+  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$ragKey, 'ragKey'], [$promptName, 'promptName']]) {
+    const saved = localStorage.getItem('pgsearch-rag:' + key);
+    if (saved) el.value = saved;
+    el.addEventListener('input', () => localStorage.setItem('pgsearch-rag:' + key, el.value));
+  }
+
+  renderConversation();
+
+  function resetConversation() {
+    messages = [];
+    localStorage.setItem('pgsearch-rag:messages', '[]');
+    renderConversation();
+  }
+
+  async function ask() {
+    const question = $q.value.trim();
+    if (!question) return;
+    const base = $apiBase.value.replace(/\/$/, '');
+    const index = $indexName.value;
+    const key = $ragKey.value;
+    const promptName = $promptName.value;
+
+    $q.value = '';
+    appendUserTurn(question);
+
+    try {
+      const res = await fetch(`${base}/public/rag/${encodeURIComponent(index)}?prompt=${encodeURIComponent(promptName)}`, {
+        method: 'POST',
+        headers: { 'x-rag-key': key, 'content-type': 'application/json' },
+        body: JSON.stringify({ question, messages }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        appendError(`${res.status} ${res.statusText}\n${body}`);
+        return;
+      }
+      const data = await res.json();
+      messages = [
+        ...messages,
+        { role: 'user', content: question },
+        { role: 'assistant', content: data.answer },
+      ];
+      localStorage.setItem('pgsearch-rag:messages', JSON.stringify(messages));
+      appendAssistantTurn(data);
+    } catch (err) {
+      appendError(err.message);
+    }
+  }
+
+  function renderConversation() {
+    $conversation.innerHTML = '';
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role === 'user') appendUserTurn(m.content);
+      else appendAssistantTurnText(m.content);
+    }
+  }
+
+  function appendUserTurn(text) {
+    const div = document.createElement('div');
+    div.className = 'turn user';
+    div.innerHTML = `<div class="role">you</div><div>${escape(text)}</div>`;
+    $conversation.appendChild(div);
+  }
+
+  function appendAssistantTurnText(text) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+    div.innerHTML = `<div class="role">assistant</div><div class="answer">${escape(text)}</div>`;
+    $conversation.appendChild(div);
+  }
+
+  function appendAssistantTurn(data) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+
+    const markerToCitation = new Map(data.citations.map(c => [c.marker, c]));
+    const answerHtml = escape(data.answer).replace(/\[(\d+)\]/g, (_, n) => {
+      const c = markerToCitation.get(Number(n));
+      if (!c) return `[${n}]`;
+      return `<sup class="cite"><a href="${escape(c.url || '#')}" target="_blank" rel="noopener">[${n}]</a></sup>`;
+    });
+
+    const citationsHtml = data.citations.length === 0 ? '' : `
+      <div class="citations">
+        Sources:
+        <ol>${data.citations.map(c => `
+          <li>${escape(c.title)} ${c.url ? `<a href="${escape(c.url)}" target="_blank" rel="noopener">↗</a>` : ''}</li>
+        `).join('')}</ol>
+      </div>`;
+
+    const retrievedHtml = `
+      <details class="retrieved">
+        <summary>retrieved (${data.retrieved.length})</summary>
+        <ul>${data.retrieved.map(r => `
+          <li>${escape(r.external_id)} — score ${r.score.toFixed(3)}${r.used ? ' ✓' : ''}</li>
+        `).join('')}</ul>
+      </details>`;
+
+    div.innerHTML = `
+      <div class="role">assistant · ${escape(data.model)} · prompt: ${escape(data.prompt)}</div>
+      <div class="answer">${answerHtml}</div>
+      ${citationsHtml}
+      ${retrievedHtml}
+      <div class="usage">tokens in: ${data.usage.input_tokens} · out: ${data.usage.output_tokens}</div>
+    `;
+    $conversation.appendChild(div);
+  }
+
+  function appendError(text) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+    div.innerHTML = `<div class="role">error</div><div class="error">${escape(text)}</div>`;
+    $conversation.appendChild(div);
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+</script>
+</body>
+</html>
