@@ -75,12 +75,23 @@ export async function runRag(
     }
   })
 
+  // Collapse retrieved to one entry per document so `used` is unambiguous.
+  // With max_chunks_per_doc > 1, multiple chunks share an external_id; the
+  // response shape has no chunk-level identifier, so chunk-level `used` would
+  // be misleading (both siblings flagged the same regardless of which was cited).
   const usedExternalIds = new Set(citations.map(c => c.external_id))
-  const retrieved: RetrievedRef[] = chunks.map(c => ({
-    external_id: c.external_id,
-    score: c.score,
-    used: usedExternalIds.has(c.external_id),
-  }))
+  const bestPerDoc = new Map<string, RetrievedRef>()
+  for (const c of chunks) {
+    const existing = bestPerDoc.get(c.external_id)
+    if (!existing || c.score > existing.score) {
+      bestPerDoc.set(c.external_id, {
+        external_id: c.external_id,
+        score: c.score,
+        used: usedExternalIds.has(c.external_id),
+      })
+    }
+  }
+  const retrieved = Array.from(bestPerDoc.values())
 
   return {
     answer: completion.text,

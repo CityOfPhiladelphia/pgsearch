@@ -2,13 +2,15 @@
 // ABOUTME: Uses test embedding + LLM adapters so retrieval and synthesis are deterministic.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
+import { Hono } from 'hono'
 import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
-import { createIndex } from '../services/indexes'
+import { createIndex, mintRagKey } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { createPrompt } from '../services/prompts'
 import { runRag } from '../services/rag'
+import { ragRoutes } from '../routes/rag'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { createTestLlmAdapter } from '@phila/llm'
 import type { PromptContent } from '../types'
@@ -146,5 +148,81 @@ describe('runRag', () => {
       question: 'q',
     })
     expect(captured.system).toBe(promptContent.system)
+  })
+
+  it('retrieved is deduplicated by external_id (one entry per document)', async () => {
+    // Use max_chunks_per_doc=3 against a doc that chunks into multiple segments
+    // so retrieval returns >1 chunk per doc; verify retrieved still has one entry per doc.
+    const multiChunkBody = Array(6).fill('Parking permit information and application details for residents.').join('\n\n')
+    await ingestDocument(pool, indexId, embedAdapter, {
+      external_id: 'parking-long',
+      title: 'Parking — extended',
+      body: multiChunkBody,
+      metadata: { source_url: 'https://phila.gov/parking/long' },
+    }, { max_segment_tokens: 15 })
+
+    const llm = createTestLlmAdapter({ withCitations: [1] })
+    const multiChunkPrompt = { ...promptContent, retrieval: { ...promptContent.retrieval, limit: 10, max_chunks_per_doc: 3 } }
+    const result = await runRag(pool, indexId, embedAdapter, llm, {
+      promptName: 'navigator',
+      promptContent: multiChunkPrompt,
+      question: 'parking',
+    })
+
+    const ids = result.retrieved.map(r => r.external_id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('ragAuth integration', () => {
+  let pool: Pool
+
+  beforeAll(async () => {
+    // The route's getPool() reads env vars and constructs a production pool;
+    // point it at the same test container the rest of the suite uses.
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    pool = await getTestPool()
+  })
+  afterAll(async () => { await teardownSchema(); await closePool() })
+  afterEach(async () => { await cleanupTestData() })
+
+  const app = new Hono()
+  app.route('/', ragRoutes)
+
+  it('returns 403 FORBIDDEN when rag_key_hash is null (RAG not enabled)', async () => {
+    await createIndex(pool, { name: 'no-rag-yet' })
+    // Intentionally do NOT call mintRagKey.
+
+    const res = await app.request('/public/rag/no-rag-yet?prompt=any', {
+      method: 'POST',
+      headers: { 'x-rag-key': 'rag_anything', 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'q' }),
+    })
+
+    expect(res.status).toBe(403)
+    const body = await res.json() as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('FORBIDDEN')
+    expect(body.error.message).toMatch(/not enabled/i)
+  })
+
+  it('returns 401 UNAUTHORIZED when key is wrong but RAG is enabled', async () => {
+    await createIndex(pool, { name: 'has-rag' })
+    await mintRagKey(pool, 'has-rag')
+
+    const res = await app.request('/public/rag/has-rag?prompt=any', {
+      method: 'POST',
+      headers: { 'x-rag-key': 'rag_wrong', 'content-type': 'application/json' },
+      body: JSON.stringify({ question: 'q' }),
+    })
+
+    expect(res.status).toBe(401)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe('UNAUTHORIZED')
   })
 })
