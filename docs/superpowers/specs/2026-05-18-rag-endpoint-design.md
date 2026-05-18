@@ -30,7 +30,8 @@ A first-class RAG endpoint puts the synthesis primitive in the same place as the
 ## Architecture
 
 ```
-POST /public/rag/:name?prompt=<name>
+POST /public/rag/:name?prompt=<promptName>
+  e.g. POST /public/rag/phila-services-programs?prompt=navigator
   ├─ auth: x-rag-key → bcrypt verify against rag_key_hash (null = disabled)
   ├─ load prompt record from rag_prompts (index_id, name)
   ├─ retrieval: hybridSearch(query=latestQuestion, prompt.retrieval, maxChunksPerDoc)
@@ -99,7 +100,9 @@ Headers: x-rag-key: rag_...
 Body: { "question": "...", "messages"?: [{"role": "user"|"assistant", "content": "..."}, ...] }
 ```
 
-`POST` (not `GET`) because the `messages` array doesn't belong in a query string.
+`:name` is the index name; `prompt` is the prompt name within that index. `POST` (not `GET`) because the `messages` array doesn't belong in a query string.
+
+Implementation note: `apps/api/index.ts` CORS `allowHeaders` must add `x-rag-key` alongside the existing keys.
 
 ### Prompt CRUD (gated by `x-index-key`)
 
@@ -157,7 +160,7 @@ Lazy creation: indexes that don't use RAG never carry an unused credential.
 
 Choices:
 
-- **`citations` vs `retrieved` are separate.** `citations` carries only chunks the LLM actually referenced (with full snippet for rendering). `retrieved` is everything sent to the model — `external_id`, `score`, `used` only. Lean payload; caller can fetch full chunks by `external_id` if needed.
+- **`citations` vs `retrieved` are separate.** `citations` carries only chunks the LLM actually referenced. Each citation's `snippet` is the full chunk body — the same text sent to the LLM — so UIs can render context without a second fetch. `retrieved` is everything sent to the model — `external_id`, `score`, `used` only. Lean payload; caller can fetch full chunks by `external_id` if needed.
 - **Citation marker parsing** is regex `\[(\d+)\]` against the answer text, deduplicated. Markers that point to nonexistent source numbers are dropped silently.
 - **`usage` always present.** No quotas in v1, but token counts let callers build cost dashboards from response data alone.
 - **`history_sig: null`** is a reserved placeholder for future HMAC-signed history. Callers can ignore it today; adding the value later is non-breaking.
@@ -189,7 +192,7 @@ First concrete adapter: `BedrockLlmAdapter`, using the Bedrock Messages API for 
 
 Honest assessment: the two adapters have very different request and response shapes. The only meaningful shared concern is **lazy Bedrock client construction** (the `await import('@aws-sdk/client-bedrock-runtime')` dance both adapters do).
 
-Extract a tiny `packages/bedrock-client` exporting a single `getBedrockClient(region)` memoized factory. Both `BedrockEmbeddingAdapter` and `BedrockLlmAdapter` consume it. No grander abstraction; the surface is too different to share more.
+Extract a tiny `packages/bedrock-client` exporting a single `getBedrockClient(region)` memoized factory. Memoization is `Map<region, BedrockRuntimeClient>` so multi-region callers don't fight over one client. Both `BedrockEmbeddingAdapter` and `BedrockLlmAdapter` consume it. No grander abstraction; the surface is too different to share more.
 
 ### Adapter factory
 
@@ -232,7 +235,7 @@ Flow: score all candidates → group by `document_id` → keep top-N per doc by 
 2. **Load prompt.** Look up `(index_id, ?prompt=<name>)` in `rag_prompts`. 404 if missing.
 3. **Retrieve.** `hybridSearch(pool, index_id, embeddingAdapter, latestQuestion, { ...prompt.retrieval, maxChunksPerDoc })`. The "latest question" is `body.question`; retrieval is **not** run against the full message history (noisy).
 4. **Render context.** For each retrieved chunk, emit `Source [N]: {title}\n{body}` (1-indexed, separated by blank lines).
-5. **Build messages.** Prepend `system` from prompt. Append caller's `messages` (already in `{role, content}` shape). Append final user turn:
+5. **Build messages.** Prepend `system` from prompt. Append caller's `messages` (already in `{role, content}` shape; v1 trusts them as-is — role alternation, count caps, and per-message length caps are an open choice for the implementation planner, likely deferred). Append final user turn:
    ```
    {context block}
 
