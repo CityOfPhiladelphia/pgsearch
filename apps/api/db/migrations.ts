@@ -90,4 +90,24 @@ GROUP BY sub.index_id, sub.term;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
     `,
   },
+  {
+    version: 2,
+    description: 'RAG: add rag_key_hash to search_indexes; create rag_prompts',
+    sql: `
+ALTER TABLE search_indexes
+  ADD COLUMN IF NOT EXISTS rag_key_hash TEXT;
+
+CREATE TABLE IF NOT EXISTS rag_prompts (
+    prompt_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    index_id    INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    content     JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (index_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_prompts_index_id ON rag_prompts (index_id);
+    `,
+  },
 ]

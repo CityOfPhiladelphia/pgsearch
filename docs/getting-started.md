@@ -1,9 +1,9 @@
-<!-- ABOUTME: Step-by-step guide for OIT engineers integrating search into a city service. -->
-<!-- ABOUTME: Covers index creation, document ingestion, refresh, and search via curl and the client SDK. -->
+<!-- ABOUTME: Step-by-step guide for engineers integrating pgsearch into a service. -->
+<!-- ABOUTME: Covers index creation, document ingestion, refresh, and search via curl and the client SDK.  -->
 
 # Getting Started with pgsearch
 
-This guide walks you through integrating search into a city service. You'll create an index, ingest documents, and run a search query.
+This guide walks you through integrating pgsearch into a service. You'll create an index, ingest documents, and run a search query.
 
 ## Prerequisites
 

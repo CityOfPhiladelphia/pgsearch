@@ -1,0 +1,339 @@
+<!-- ABOUTME: Static dev tool for manually exercising the pgsearch RAG endpoint. -->
+<!-- ABOUTME: Open via file:// in a browser; never served in production. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pgsearch rag dev</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-muted: #555;
+    --fg-faint: #8a8a8a;
+    --border: #e4e4e4;
+    --bg-config: #f4f4f4;
+    --bg-user: #f8f9fb;
+    --link: #0a5fb1;
+    --error-fg: #b00020;
+    --error-bg: #fff4f4;
+  }
+  body {
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+    max-width: 740px;
+    margin: 2rem auto;
+    padding: 0 1.25rem 4rem;
+    color: var(--fg);
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 1rem; font-weight: 600; }
+  .config { background: var(--bg-config); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+  .config label { display: block; margin-bottom: 0.5rem; font-size: 12px; color: var(--fg-muted); }
+  .config label:last-child { margin-bottom: 0; }
+  .config input {
+    width: 100%; padding: 0.45rem 0.6rem; box-sizing: border-box;
+    font: inherit; font-size: 13px;
+    border: 1px solid #d4d4d4; border-radius: 4px;
+    background: #fff;
+  }
+  form.ask { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  form.ask input[type=text] {
+    flex: 1; padding: 0.7rem 0.9rem; font: inherit; font-size: 15px;
+    border: 1px solid #d4d4d4; border-radius: 6px;
+  }
+  form.ask input[type=text]:focus { outline: none; border-color: var(--link); }
+  form.ask button {
+    padding: 0.7rem 1.1rem; font: inherit; font-size: 14px; cursor: pointer;
+    background: var(--link); color: #fff; border: 1px solid var(--link); border-radius: 6px;
+  }
+  form.ask button.reset { background: #fff; color: var(--fg-muted); border-color: #d4d4d4; }
+  form.ask button:hover { filter: brightness(0.95); }
+
+  .turn { padding: 1.25rem 0; border-top: 1px solid var(--border); }
+  .turn:first-child { border-top: none; }
+  .turn .role {
+    font-size: 11px; color: var(--fg-faint); text-transform: uppercase;
+    letter-spacing: 0.6px; margin-bottom: 0.5rem;
+  }
+  .turn.user .bubble {
+    background: var(--bg-user);
+    padding: 0.7rem 0.95rem;
+    border-radius: 8px;
+    border-left: 3px solid #d4d4d4;
+    white-space: pre-wrap;
+  }
+
+  /* Markdown-rendered answer: tighten the spacing the library produces */
+  .answer { color: var(--fg); }
+  .answer > :first-child { margin-top: 0; }
+  .answer > :last-child { margin-bottom: 0; }
+  .answer p { margin: 0.6rem 0; }
+  .answer h1 { font-size: 1.15rem; margin: 1.2rem 0 0.5rem; font-weight: 600; }
+  .answer h2 { font-size: 1.05rem; margin: 1.1rem 0 0.4rem; font-weight: 600; }
+  .answer h3 { font-size: 1rem; margin: 1rem 0 0.3rem; font-weight: 600; color: var(--fg-muted); }
+  .answer h4, .answer h5, .answer h6 { font-size: 0.95rem; margin: 0.9rem 0 0.3rem; font-weight: 600; }
+  .answer ul, .answer ol { margin: 0.6rem 0; padding-left: 1.4rem; }
+  .answer li { margin: 0.25rem 0; }
+  .answer li > p { margin: 0.25rem 0; }
+  .answer strong { font-weight: 600; }
+  .answer code {
+    background: #f1f3f5; padding: 0.05rem 0.3rem; border-radius: 3px;
+    font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .answer pre {
+    background: #f1f3f5; padding: 0.8rem; border-radius: 6px; overflow-x: auto;
+    font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .answer pre code { background: none; padding: 0; }
+  .answer blockquote {
+    border-left: 3px solid var(--border); margin: 0.6rem 0; padding: 0.2rem 0.8rem;
+    color: var(--fg-muted);
+  }
+  .answer hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+  .answer a { color: var(--link); }
+  .answer table { border-collapse: collapse; margin: 0.6rem 0; }
+  .answer th, .answer td { border: 1px solid var(--border); padding: 0.3rem 0.6rem; text-align: left; }
+
+  sup.cite { line-height: 0; }
+  sup.cite a {
+    color: var(--link); text-decoration: none; padding: 0 1px;
+    font-size: 0.75em; font-weight: 600;
+  }
+  sup.cite a:hover { text-decoration: underline; }
+
+  .citations {
+    margin-top: 1rem; padding: 0.7rem 0.9rem;
+    background: #fafafa; border-radius: 6px;
+    font-size: 13px; color: var(--fg-muted);
+  }
+  .citations .label { font-weight: 600; color: var(--fg); margin-bottom: 0.3rem; }
+  .citations ol { margin: 0; padding-left: 1.4rem; }
+  .citations li { margin: 0.2rem 0; }
+  .citations a { color: var(--link); text-decoration: none; }
+  .citations a:hover { text-decoration: underline; }
+
+  details.retrieved { margin-top: 0.8rem; font-size: 12px; color: var(--fg-faint); }
+  details.retrieved summary { cursor: pointer; user-select: none; }
+  details.retrieved ul { margin: 0.4rem 0 0; padding-left: 1.4rem; }
+  details.retrieved li { margin: 0.15rem 0; }
+  details.retrieved .used { color: var(--link); font-weight: 600; }
+
+  .meta { font-size: 11px; color: var(--fg-faint); margin-top: 0.6rem; }
+  .meta .sep { margin: 0 0.4rem; color: #ccc; }
+
+  .error { color: var(--error-fg); padding: 0.7rem 0.9rem; background: var(--error-bg); border-radius: 6px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .empty { color: var(--fg-faint); font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>pgsearch rag dev</h1>
+
+<div class="config">
+  <label>API base URL <input id="api-base" value="https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev"></label>
+  <label>Index name <input id="index-name" value="phila-services-programs"></label>
+  <label>RAG key <input id="rag-key" type="password" placeholder="rag_..."></label>
+  <label>Prompt name <input id="prompt-name" value="navigator"></label>
+</div>
+
+<form class="ask" onsubmit="event.preventDefault(); ask();">
+  <input type="text" id="q" placeholder="Ask…" autofocus>
+  <button type="submit">Ask</button>
+  <button type="button" class="reset" onclick="resetConversation()">Reset</button>
+</form>
+
+<div id="conversation"></div>
+
+<script>
+  marked.setOptions({ breaks: true, gfm: true });
+
+  const $apiBase = document.getElementById('api-base');
+  const $indexName = document.getElementById('index-name');
+  const $ragKey = document.getElementById('rag-key');
+  const $promptName = document.getElementById('prompt-name');
+  const $q = document.getElementById('q');
+  const $conversation = document.getElementById('conversation');
+
+  // messages[] stores {role, content, response?} — the optional `response` carries
+  // the full RAG payload (citations, retrieved, model, usage) so reloaded
+  // conversations replay with their citation links and source panels intact.
+  // The `response` field is stripped before sending to the API.
+  let messages = JSON.parse(localStorage.getItem('pgsearch-rag:messages') || '[]');
+
+  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$ragKey, 'ragKey'], [$promptName, 'promptName']]) {
+    const saved = localStorage.getItem('pgsearch-rag:' + key);
+    if (saved) el.value = saved;
+    el.addEventListener('input', () => localStorage.setItem('pgsearch-rag:' + key, el.value));
+  }
+
+  renderConversation();
+
+  function resetConversation() {
+    messages = [];
+    localStorage.setItem('pgsearch-rag:messages', '[]');
+    renderConversation();
+  }
+
+  async function ask() {
+    const question = $q.value.trim();
+    if (!question) return;
+    const base = $apiBase.value.replace(/\/$/, '');
+    const index = $indexName.value;
+    const key = $ragKey.value;
+    const promptName = $promptName.value;
+
+    $q.value = '';
+    appendUserTurn(question);
+    const pending = appendPendingTurn();
+
+    // Strip the locally-attached `response` metadata before sending to the API.
+    const apiMessages = messages.map(m => ({ role: m.role, content: m.content }));
+
+    try {
+      const res = await fetch(`${base}/public/rag/${encodeURIComponent(index)}?prompt=${encodeURIComponent(promptName)}`, {
+        method: 'POST',
+        headers: { 'x-rag-key': key, 'content-type': 'application/json' },
+        body: JSON.stringify({ question, messages: apiMessages }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        pending.remove();
+        appendError(`${res.status} ${res.statusText}\n${body}`);
+        return;
+      }
+      const data = await res.json();
+      messages = [
+        ...messages,
+        { role: 'user', content: question },
+        { role: 'assistant', content: data.answer, response: data },
+      ];
+      localStorage.setItem('pgsearch-rag:messages', JSON.stringify(messages));
+      pending.remove();
+      appendAssistantTurn(data);
+    } catch (err) {
+      pending.remove();
+      appendError(err.message);
+    }
+  }
+
+  function renderConversation() {
+    $conversation.innerHTML = '';
+    for (const m of messages) {
+      if (m.role === 'user') {
+        appendUserTurn(m.content);
+      } else if (m.response) {
+        appendAssistantTurn(m.response);
+      } else {
+        // Older entries from before we persisted the full payload, or any
+        // turn where the API response was lost — fall back to plain markdown.
+        appendAssistantTurnText(m.content);
+      }
+    }
+  }
+
+  function appendUserTurn(text) {
+    const div = document.createElement('div');
+    div.className = 'turn user';
+    const role = document.createElement('div'); role.className = 'role'; role.textContent = 'you';
+    const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = text;
+    div.appendChild(role); div.appendChild(bubble);
+    $conversation.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  function appendPendingTurn() {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+    div.innerHTML = `<div class="role">assistant</div><div class="empty">…thinking</div>`;
+    $conversation.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    return div;
+  }
+
+  // History replay (no citations metadata stored — just the answer markdown)
+  function appendAssistantTurnText(text) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+    const role = document.createElement('div'); role.className = 'role'; role.textContent = 'assistant';
+    const answer = document.createElement('div'); answer.className = 'answer';
+    answer.innerHTML = renderAnswerMarkdown(text, new Map());
+    div.appendChild(role); div.appendChild(answer);
+    $conversation.appendChild(div);
+  }
+
+  function appendAssistantTurn(data) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+
+    const role = document.createElement('div');
+    role.className = 'role';
+    role.textContent = `assistant · ${data.model} · prompt: ${data.prompt}`;
+
+    const answer = document.createElement('div');
+    answer.className = 'answer';
+    const markerToCitation = new Map(data.citations.map(c => [c.marker, c]));
+    answer.innerHTML = renderAnswerMarkdown(data.answer, markerToCitation);
+
+    div.appendChild(role);
+    div.appendChild(answer);
+
+    if (data.citations.length > 0) {
+      const cites = document.createElement('div');
+      cites.className = 'citations';
+      const items = data.citations.map(c => {
+        const titleHtml = escape(c.title);
+        const link = c.url ? `<a href="${escape(c.url)}" target="_blank" rel="noopener">${titleHtml}</a>` : titleHtml;
+        return `<li>${link}</li>`;
+      }).join('');
+      cites.innerHTML = `<div class="label">Sources</div><ol>${items}</ol>`;
+      div.appendChild(cites);
+    }
+
+    const retrieved = document.createElement('details');
+    retrieved.className = 'retrieved';
+    const usedCount = data.retrieved.filter(r => r.used).length;
+    const items = data.retrieved.map(r => {
+      const mark = r.used ? '<span class="used">✓</span> ' : '';
+      return `<li>${mark}${escape(r.external_id)} — score ${r.score.toFixed(3)}</li>`;
+    }).join('');
+    retrieved.innerHTML = `<summary>retrieved (${data.retrieved.length}, ${usedCount} cited)</summary><ul>${items}</ul>`;
+    div.appendChild(retrieved);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `tokens in: ${data.usage.input_tokens}<span class="sep">·</span>out: ${data.usage.output_tokens}`;
+    div.appendChild(meta);
+
+    $conversation.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+
+  // Render the assistant's markdown answer to safe HTML, replacing [N] citation
+  // markers with superscript links. The marker pass runs on the rendered HTML so
+  // markdown structure (headers, lists, paragraphs) survives intact.
+  function renderAnswerMarkdown(text, markerToCitation) {
+    const rawHtml = marked.parse(text);
+    const safeHtml = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
+    return safeHtml.replace(/\[(\d+)\]/g, (match, n) => {
+      const c = markerToCitation.get(Number(n));
+      if (!c) return match;
+      const href = c.url || '#';
+      return `<sup class="cite"><a href="${escape(href)}" target="_blank" rel="noopener">[${n}]</a></sup>`;
+    });
+  }
+
+  function appendError(text) {
+    const div = document.createElement('div');
+    div.className = 'turn assistant';
+    const role = document.createElement('div'); role.className = 'role'; role.textContent = 'error';
+    const err = document.createElement('div'); err.className = 'error'; err.textContent = text;
+    div.appendChild(role); div.appendChild(err);
+    $conversation.appendChild(div);
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+</script>
+</body>
+</html>

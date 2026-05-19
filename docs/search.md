@@ -23,7 +23,7 @@ Each query runs two independent retrieval passes, then combines the results into
    ```
    Candidates appearing in both passes get contributions from both, naturally ranking higher. See [RRF on Wikipedia](https://en.wikipedia.org/wiki/Reciprocal_rank_fusion) for background.
 
-5. **Deduplication** — one result per document. When multiple segments of the same document match, only the highest-scoring segment is returned (as the snippet).
+5. **Per-document cap** — `hybridSearch` caps how many segments survive per document. The default is 1 (best segment per doc), which is what the `/public/search/:name` route uses. RAG callers (see `docs/rag.md`) pass a higher cap so multiple sections of the same source can contribute to LLM context. The total result count is still bounded by `limit`.
 
 ---
 
@@ -69,7 +69,7 @@ These are design decisions baked into pgsearch and why they were made:
 
 - **Title embedded with segments** — each segment's embedding is computed from `"Document Title\n\nbody segment text"` (title prepended directly, no label prefix). This gives the vector model document-level context for each chunk.
 
-- **One result per document** — the best-scoring segment wins. Multiple matching sections from the same document don't produce multiple results.
+- **One result per document by default** — the best-scoring segment wins. The internal `maxChunksPerDoc` knob lifts this cap (used by RAG to pull multiple sections from a source); the search route always uses the default of 1.
 
 - **Segment size ~500 words** — the chunker uses whitespace-delimited word count (not model tokenization). Balances embedding quality with context preservation. Configurable via `max_segment_tokens`.
 

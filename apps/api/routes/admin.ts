@@ -2,80 +2,76 @@
 // ABOUTME: Handles CRUD operations on search indexes behind API Gateway key authentication.
 
 import { Hono } from 'hono'
-import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex } from '../services/indexes'
+import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
 import { refreshIndex } from '../services/refresh'
 import { apiError } from '../middleware/error'
-import { getPool } from '../db/pool'
+import { withPool } from '../middleware/deps'
+import { parseBody, type Schema } from '../middleware/validate'
+import type { AppEnv } from '../types'
 
-export const adminRoutes = new Hono()
+const createIndexSchema: Schema = {
+  name: [['typeof', 'string'], ['nonEmpty']],
+  'description?': ['typeof', 'string'],
+  'config?': ['object'],
+}
 
-adminRoutes.post('/private/key/admin/indexes', async (c) => {
-  const body = await c.req.json()
-  if (!body.name || typeof body.name !== 'string') {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required field: name (string)')
-  }
+// Typed Hono<AppEnv> even though admin routes don't read the `index` variable —
+// matches what the withPool HOF expects so Hono's path-param inference flows
+// through to handlers without resolving c.req.param to string | undefined.
+export const adminRoutes = new Hono<AppEnv>()
 
-  const pool = await getPool()
-  const result = await createIndex(pool, {
-    name: body.name,
-    description: body.description,
-    config: body.config,
-  })
+adminRoutes.post('/private/key/admin/indexes', withPool(async ({ pool }, c) => {
+  const body = await parseBody<{ name: string; description?: string; config?: any }>(c, createIndexSchema)
+  const result = await createIndex(pool, body)
+  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${body.name}' already exists`)
   return c.json(result, 201)
-})
+}))
 
-adminRoutes.get('/private/key/admin/indexes', async (c) => {
-  const pool = await getPool()
+adminRoutes.get('/private/key/admin/indexes', withPool(async ({ pool }, c) => {
   const indexes = await listIndexes(pool)
   return c.json(indexes)
-})
+}))
 
-adminRoutes.get('/private/key/admin/indexes/:name', async (c) => {
-  const name = c.req.param('name')
-  const pool = await getPool()
+adminRoutes.get('/private/key/admin/indexes/:name', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
   const index = await getIndex(pool, name)
   if (!index) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json(index)
-})
+}))
 
-adminRoutes.patch('/private/key/admin/indexes/:name', async (c) => {
-  const name = c.req.param('name')
+adminRoutes.patch('/private/key/admin/indexes/:name', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
   const body = await c.req.json()
-
-  const pool = await getPool()
-  try {
-    await updateIndex(pool, name, body)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
-
-  const updated = await getIndex(pool, name)
+  const updated = await updateIndex(pool, name, body)
+  if (!updated) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json(updated)
-})
+}))
 
-adminRoutes.delete('/private/key/admin/indexes/:name', async (c) => {
-  const name = c.req.param('name')
-  const pool = await getPool()
-  try {
-    await deleteIndex(pool, name)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
+adminRoutes.delete('/private/key/admin/indexes/:name', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const deleted = await deleteIndex(pool, name)
+  if (!deleted) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ deleted: true })
-})
+}))
 
-adminRoutes.post('/private/key/admin/indexes/:name/refresh', async (c) => {
-  const name = c.req.param('name')
-  const pool = await getPool()
+adminRoutes.post('/private/key/admin/indexes/:name/refresh', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
   const index = await getIndex(pool, name)
   if (!index) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-
   await refreshIndex(pool, index.index_id)
   return c.json({ status: 'refreshed' })
-})
+}))
+
+adminRoutes.post('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const result = await mintKey(pool, name, 'rag')
+  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ rag_key: result.key }, 201)
+}))
+
+adminRoutes.delete('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const revoked = await revokeKey(pool, name, 'rag')
+  if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ revoked: true })
+}))

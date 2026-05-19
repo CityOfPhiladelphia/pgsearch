@@ -29,6 +29,7 @@ export interface SearchIndex {
   config: IndexConfig
   index_key_hash: string
   search_key_hash: string
+  rag_key_hash: string | null
   total_documents: number
   avg_title_length: number
   avg_body_length: number
@@ -117,4 +118,59 @@ export type AppEnv = {
   Variables: {
     index: SearchIndex
   }
+}
+
+export interface PromptRetrievalConfig {
+  mode: 'hybrid' | 'bm25' | 'semantic'
+  limit: number
+  max_chunks_per_doc: number
+  min_bm25_score: number
+  min_vector_score: number
+}
+
+export interface PromptContent {
+  system: string
+  response_format: string
+  model: string
+  max_tokens: number
+  temperature: number
+  retrieval: PromptRetrievalConfig
+}
+
+export interface RagPrompt {
+  prompt_id: string
+  index_id: number
+  name: string
+  content: PromptContent
+  created_at: string
+  updated_at: string
+}
+
+export interface RagRequest {
+  question: string
+  messages?: { role: 'user' | 'assistant'; content: string }[]
+}
+
+export interface Citation {
+  marker: number
+  external_id: string
+  title: string
+  url: string
+  snippet: string
+}
+
+export interface RetrievedRef {
+  external_id: string
+  score: number
+  used: boolean
+}
+
+export interface RagResponse {
+  answer: string
+  citations: Citation[]
+  retrieved: RetrievedRef[]
+  model: string
+  prompt: string
+  usage: { input_tokens: number; output_tokens: number }
+  history_sig: string | null
 }

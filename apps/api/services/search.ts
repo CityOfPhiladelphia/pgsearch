@@ -35,6 +35,7 @@ export interface HybridSearchOptions {
   mode?: SearchMode
   minBm25Score?: number
   minVectorScore?: number
+  maxChunksPerDoc?: number
 }
 
 export async function vectorCandidates(
@@ -296,16 +297,23 @@ export async function hybridSearch(
     return { results: [], total: 0, query: queryText }
   }
 
-  // Deduplicate: keep the highest-scoring segment per document
-  const bestByDoc = new Map<string, typeof scored[0]>()
+  const maxChunksPerDoc = options.maxChunksPerDoc ?? 1
+
+  // Group by document, keep top-N per doc by score
+  const byDoc = new Map<string, typeof scored>()
   for (const s of scored) {
-    const existing = bestByDoc.get(s.document_id)
-    if (!existing || s.score > existing.score) {
-      bestByDoc.set(s.document_id, s)
-    }
+    const list = byDoc.get(s.document_id) ?? []
+    list.push(s)
+    byDoc.set(s.document_id, list)
   }
 
-  const deduped = Array.from(bestByDoc.values())
+  const capped: typeof scored = []
+  for (const [, list] of byDoc) {
+    list.sort((a, b) => b.score - a.score)
+    capped.push(...list.slice(0, maxChunksPerDoc))
+  }
+
+  const deduped = capped
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
 
@@ -319,7 +327,7 @@ export async function hybridSearch(
 
   return {
     results,
-    total: bestByDoc.size,
+    total: byDoc.size,
     query: queryText,
   }
 }

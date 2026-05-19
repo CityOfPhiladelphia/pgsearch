@@ -154,4 +154,53 @@ describe('search', () => {
       expect(results.total).toBe(0)
     })
   })
+
+  describe('maxChunksPerDoc', () => {
+    beforeAll(async () => {
+      // Ingest a doc whose body chunks into several segments so the cap can be tested.
+      const longBody = Array(8).fill('Parking permit information and application details for residents of the city.').join('\n\n')
+      await ingestDocument(pool, indexId, adapter, {
+        external_id: 'multi-cap',
+        title: 'Parking Info Detailed',
+        body: longBody,
+      }, { max_segment_tokens: 15 })
+      await refreshIndex(pool, indexId)
+    })
+
+    it('defaults to 1 (best segment per document)', async () => {
+      const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 20 })
+      const docIds = results.results.map(r => r.external_id)
+      expect(new Set(docIds).size).toBe(docIds.length)
+    })
+
+    it('with maxChunksPerDoc=3 returns up to 3 segments per document', async () => {
+      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+        limit: 20, maxChunksPerDoc: 3,
+      })
+      const counts = new Map<string, number>()
+      for (const r of results.results) {
+        counts.set(r.external_id, (counts.get(r.external_id) ?? 0) + 1)
+      }
+      for (const [, count] of counts) {
+        expect(count).toBeLessThanOrEqual(3)
+      }
+      // Prove the cap actually enables multiple chunks (would fail under the old 1-per-doc dedup)
+      expect(counts.get('multi-cap') ?? 0).toBeGreaterThan(1)
+    })
+
+    it('respects per-doc cap when one doc has many strong segments', async () => {
+      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+        limit: 50, maxChunksPerDoc: 2,
+      })
+      const counts = new Map<string, number>()
+      for (const r of results.results) {
+        counts.set(r.external_id, (counts.get(r.external_id) ?? 0) + 1)
+      }
+      for (const [, count] of counts) {
+        expect(count).toBeLessThanOrEqual(2)
+      }
+      // multi-cap has many matching segments; cap=2 should yield exactly 2 (proves the cap fires)
+      expect(counts.get('multi-cap') ?? 0).toBe(2)
+    })
+  })
 })
