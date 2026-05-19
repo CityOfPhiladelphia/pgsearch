@@ -154,8 +154,10 @@
   const $q = document.getElementById('q');
   const $conversation = document.getElementById('conversation');
 
-  // Latest assistant turn is rendered with full structure (citations, retrieved, usage).
-  // Replayed history (after page reload) renders only the answer to keep the scroll lean.
+  // messages[] stores {role, content, response?} — the optional `response` carries
+  // the full RAG payload (citations, retrieved, model, usage) so reloaded
+  // conversations replay with their citation links and source panels intact.
+  // The `response` field is stripped before sending to the API.
   let messages = JSON.parse(localStorage.getItem('pgsearch-rag:messages') || '[]');
 
   for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$ragKey, 'ragKey'], [$promptName, 'promptName']]) {
@@ -184,11 +186,14 @@
     appendUserTurn(question);
     const pending = appendPendingTurn();
 
+    // Strip the locally-attached `response` metadata before sending to the API.
+    const apiMessages = messages.map(m => ({ role: m.role, content: m.content }));
+
     try {
       const res = await fetch(`${base}/public/rag/${encodeURIComponent(index)}?prompt=${encodeURIComponent(promptName)}`, {
         method: 'POST',
         headers: { 'x-rag-key': key, 'content-type': 'application/json' },
-        body: JSON.stringify({ question, messages }),
+        body: JSON.stringify({ question, messages: apiMessages }),
       });
       if (!res.ok) {
         const body = await res.text();
@@ -200,7 +205,7 @@
       messages = [
         ...messages,
         { role: 'user', content: question },
-        { role: 'assistant', content: data.answer },
+        { role: 'assistant', content: data.answer, response: data },
       ];
       localStorage.setItem('pgsearch-rag:messages', JSON.stringify(messages));
       pending.remove();
@@ -214,8 +219,15 @@
   function renderConversation() {
     $conversation.innerHTML = '';
     for (const m of messages) {
-      if (m.role === 'user') appendUserTurn(m.content);
-      else appendAssistantTurnText(m.content);
+      if (m.role === 'user') {
+        appendUserTurn(m.content);
+      } else if (m.response) {
+        appendAssistantTurn(m.response);
+      } else {
+        // Older entries from before we persisted the full payload, or any
+        // turn where the API response was lost — fall back to plain markdown.
+        appendAssistantTurnText(m.content);
+      }
     }
   }
 
