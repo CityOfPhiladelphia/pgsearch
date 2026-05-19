@@ -3,16 +3,16 @@
 
 import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'
+import { withIndex } from '../middleware/deps'
 import { ingestDocument, deleteDocument } from '../services/ingest'
 import { apiError } from '../middleware/error'
-import { getPool } from '../db/pool'
 import { getAdapter } from '../services/adapter'
 import type { AppEnv } from '../types'
 
 export const ingestRoutes = new Hono<AppEnv>()
 ingestRoutes.use('/public/index/:name/*', indexAuth)
 
-ingestRoutes.post('/public/index/:name/documents', async (c) => {
+ingestRoutes.post('/public/index/:name/documents', withIndex(async ({ pool, index }, c) => {
   const body = await c.req.json()
 
   if (!body.external_id || typeof body.external_id !== 'string') {
@@ -25,8 +25,6 @@ ingestRoutes.post('/public/index/:name/documents', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Missing required field: body (string)')
   }
 
-  const index = c.get('index')
-  const pool = await getPool()
   const adapter = getAdapter(index.config)
 
   try {
@@ -43,13 +41,10 @@ ingestRoutes.post('/public/index/:name/documents', async (c) => {
     }
     throw err
   }
-})
+}))
 
-ingestRoutes.delete('/public/index/:name/documents/:external_id', async (c) => {
-  const externalId = c.req.param('external_id')
-  const index = c.get('index')
-  const pool = await getPool()
-
+ingestRoutes.delete('/public/index/:name/documents/:external_id', withIndex(async ({ pool, index }, c) => {
+  const externalId = c.req.param('external_id')!
   await deleteDocument(pool, index.index_id, externalId)
   return c.json({ deleted: true })
-})
+}))

@@ -3,8 +3,8 @@
 
 import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'
+import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
-import { getPool } from '../db/pool'
 import {
   createPrompt,
   getPrompt,
@@ -47,7 +47,7 @@ function validateContent(c: any): { ok: true; content: PromptContent } | { ok: f
   return { ok: true, content: c as PromptContent }
 }
 
-promptsRoutes.post('/public/index/:name/prompts', async (c) => {
+promptsRoutes.post('/public/index/:name/prompts', withIndex(async ({ pool, index }, c) => {
   const body = await c.req.json()
   if (!body.name || typeof body.name !== 'string') {
     return apiError(c, 'VALIDATION_ERROR', 'Missing required field: name (string)')
@@ -55,47 +55,37 @@ promptsRoutes.post('/public/index/:name/prompts', async (c) => {
   const v = validateContent(body.content)
   if (!v.ok) return apiError(c, 'VALIDATION_ERROR', v.message)
 
-  const index = c.get('index')
-  const pool = await getPool()
   const created = await createPrompt(pool, index.index_id, body.name, v.content)
   if (!created) return apiError(c, 'VALIDATION_ERROR', `Prompt '${body.name}' already exists`)
   return c.json(created, 201)
-})
+}))
 
-promptsRoutes.get('/public/index/:name/prompts', async (c) => {
-  const index = c.get('index')
-  const pool = await getPool()
+promptsRoutes.get('/public/index/:name/prompts', withIndex(async ({ pool, index }, c) => {
   const list = await listPrompts(pool, index.index_id)
   return c.json(list)
-})
+}))
 
-promptsRoutes.get('/public/index/:name/prompts/:promptName', async (c) => {
-  const promptName = c.req.param('promptName')
-  const index = c.get('index')
-  const pool = await getPool()
+promptsRoutes.get('/public/index/:name/prompts/:promptName', withIndex(async ({ pool, index }, c) => {
+  const promptName = c.req.param('promptName')!
   const prompt = await getPrompt(pool, index.index_id, promptName)
   if (!prompt) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(prompt)
-})
+}))
 
-promptsRoutes.patch('/public/index/:name/prompts/:promptName', async (c) => {
-  const promptName = c.req.param('promptName')
+promptsRoutes.patch('/public/index/:name/prompts/:promptName', withIndex(async ({ pool, index }, c) => {
+  const promptName = c.req.param('promptName')!
   const body = await c.req.json()
   const v = validateContent(body.content)
   if (!v.ok) return apiError(c, 'VALIDATION_ERROR', v.message)
 
-  const index = c.get('index')
-  const pool = await getPool()
   const updated = await updatePrompt(pool, index.index_id, promptName, v.content)
   if (!updated) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(updated)
-})
+}))
 
-promptsRoutes.delete('/public/index/:name/prompts/:promptName', async (c) => {
-  const promptName = c.req.param('promptName')
-  const index = c.get('index')
-  const pool = await getPool()
+promptsRoutes.delete('/public/index/:name/prompts/:promptName', withIndex(async ({ pool, index }, c) => {
+  const promptName = c.req.param('promptName')!
   const deleted = await deletePrompt(pool, index.index_id, promptName)
   if (!deleted) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json({ deleted: true })
-})
+}))

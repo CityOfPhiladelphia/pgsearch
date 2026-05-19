@@ -3,8 +3,8 @@
 
 import { Hono } from 'hono'
 import { ragAuth } from '../middleware/auth'
+import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
-import { getPool } from '../db/pool'
 import { getAdapter } from '../services/adapter'
 import { getLlmAdapter } from '../services/llm-adapter'
 import { getPrompt } from '../services/prompts'
@@ -14,7 +14,7 @@ import type { AppEnv } from '../types'
 export const ragRoutes = new Hono<AppEnv>()
 ragRoutes.use('/public/rag/:name', ragAuth)
 
-ragRoutes.post('/public/rag/:name', async (c) => {
+ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
   const promptName = c.req.query('prompt')
   if (!promptName) {
     return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: prompt')
@@ -34,9 +34,6 @@ ragRoutes.post('/public/rag/:name', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'messages must be an array')
   }
 
-  const index = c.get('index')
-  const pool = await getPool()
-
   const prompt = await getPrompt(pool, index.index_id, promptName)
   if (!prompt) {
     return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
@@ -53,4 +50,4 @@ ragRoutes.post('/public/rag/:name', async (c) => {
   })
 
   return c.json(result, 200)
-})
+}))
