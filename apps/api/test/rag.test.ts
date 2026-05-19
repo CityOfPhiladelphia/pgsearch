@@ -195,7 +195,7 @@ describe('ragAuth integration', () => {
   const app = new Hono()
   app.route('/', ragRoutes)
 
-  it('returns 403 FORBIDDEN when rag_key_hash is null (RAG not enabled)', async () => {
+  it('returns 401 UNAUTHORIZED when rag_key_hash is null (RAG not enabled)', async () => {
     await createIndex(pool, { name: 'no-rag-yet' })
     // Intentionally do NOT call mintRagKey.
 
@@ -205,10 +205,10 @@ describe('ragAuth integration', () => {
       body: JSON.stringify({ question: 'q' }),
     })
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(401)
     const body = await res.json() as { error: { code: string; message: string } }
-    expect(body.error.code).toBe('FORBIDDEN')
-    expect(body.error.message).toMatch(/not enabled/i)
+    expect(body.error.code).toBe('UNAUTHORIZED')
+    expect(body.error.message).toMatch(/invalid rag key/i)
   })
 
   it('returns 401 UNAUTHORIZED when key is wrong but RAG is enabled', async () => {

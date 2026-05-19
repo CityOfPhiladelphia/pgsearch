@@ -138,7 +138,7 @@ curl -X DELETE https://<api-url>/private/key/admin/indexes/my-index/rag-key \
   -H "x-api-key: $ADMIN_KEY"
 ```
 
-Nulls the stored hash. The endpoint will return 403 with "RAG is not enabled for this index" until a new key is minted.
+Nulls the stored hash. The endpoint will return 401 (`Invalid RAG key`) until a new key is minted.
 
 ## What's opinionated
 

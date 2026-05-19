@@ -89,7 +89,7 @@ Four credentials, three levels:
 | Per-index — search | `x-search-key` | Returned by `createIndex` | Query a specific index |
 | Per-index — RAG | `x-rag-key` | Returned by admin `mintRagKey` (lazy) | Invoke RAG synthesis against a specific index |
 
-The admin key is managed by API Gateway infrastructure — retrieved from AWS Secrets Manager. Index, search, and RAG keys are application-level credentials, bcrypt-hashed, stored per-index. The RAG key is **lazy** — indexes that don't use RAG never carry an unused credential. When `rag_key_hash` is null, the RAG endpoint returns 403 ("RAG is not enabled for this index"). When the key is present but doesn't match, it returns 401 ("Invalid RAG key").
+The admin key is managed by API Gateway infrastructure — retrieved from AWS Secrets Manager. Index, search, and RAG keys are application-level credentials, bcrypt-hashed, stored per-index. The RAG key is **lazy** — indexes that don't use RAG never carry an unused credential. When `rag_key_hash` is null (RAG not enabled) or the provided key doesn't match, the RAG endpoint returns 401 with `Invalid RAG key`. Callers needing to distinguish "feature disabled" from "wrong key" can check the index record directly via the admin endpoint.
 
 Splitting the RAG key from the search key matters because LLM calls can cost 100–1000× more than an embedding call. Separate keys keep cost attribution clean and let you revoke LLM-spend access without disrupting read access.
 
@@ -135,7 +135,7 @@ RAG layers atop hybrid search. `/public/rag/:name` retrieves the top chunks for 
 
 ### Request flow
 
-1. **Auth.** Verify `x-rag-key` against `rag_key_hash`. Reject with 403 if column is null, 401 if the key doesn't match.
+1. **Auth.** Verify `x-rag-key` against `rag_key_hash`. Reject with 401 if the column is null or the key doesn't match.
 2. **Load prompt.** Look up `(index_id, ?prompt=<name>)` in `rag_prompts`. 404 if missing.
 3. **Retrieve.** `hybridSearch(...)` against the latest question (not the full message history — searching history is noisy), using the prompt's `retrieval` config (mode, limit, max_chunks_per_doc, score floors).
 4. **Render context.** Emit `Source [N]: {title}\n{body}` per chunk, separated by blank lines.
