@@ -2,7 +2,7 @@
 // ABOUTME: Handles CRUD operations on search indexes behind API Gateway key authentication.
 
 import { Hono } from 'hono'
-import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintRagKey, revokeRagKey } from '../services/indexes'
+import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
 import { refreshIndex } from '../services/refresh'
 import { apiError } from '../middleware/error'
 import { getPool } from '../db/pool'
@@ -21,6 +21,7 @@ adminRoutes.post('/private/key/admin/indexes', async (c) => {
     description: body.description,
     config: body.config,
   })
+  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${body.name}' already exists`)
   return c.json(result, 201)
 })
 
@@ -41,32 +42,17 @@ adminRoutes.get('/private/key/admin/indexes/:name', async (c) => {
 adminRoutes.patch('/private/key/admin/indexes/:name', async (c) => {
   const name = c.req.param('name')
   const body = await c.req.json()
-
   const pool = await getPool()
-  try {
-    await updateIndex(pool, name, body)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
-
-  const updated = await getIndex(pool, name)
+  const updated = await updateIndex(pool, name, body)
+  if (!updated) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json(updated)
 })
 
 adminRoutes.delete('/private/key/admin/indexes/:name', async (c) => {
   const name = c.req.param('name')
   const pool = await getPool()
-  try {
-    await deleteIndex(pool, name)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
+  const deleted = await deleteIndex(pool, name)
+  if (!deleted) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ deleted: true })
 })
 
@@ -83,27 +69,15 @@ adminRoutes.post('/private/key/admin/indexes/:name/refresh', async (c) => {
 adminRoutes.post('/private/key/admin/indexes/:name/rag-key', async (c) => {
   const name = c.req.param('name')
   const pool = await getPool()
-  try {
-    const result = await mintRagKey(pool, name)
-    return c.json(result, 201)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
+  const result = await mintKey(pool, name, 'rag')
+  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ rag_key: result.key }, 201)
 })
 
 adminRoutes.delete('/private/key/admin/indexes/:name/rag-key', async (c) => {
   const name = c.req.param('name')
   const pool = await getPool()
-  try {
-    await revokeRagKey(pool, name)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
+  const revoked = await revokeKey(pool, name, 'rag')
+  if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ revoked: true })
 })

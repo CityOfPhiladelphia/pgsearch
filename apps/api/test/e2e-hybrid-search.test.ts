@@ -86,12 +86,13 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
       },
     })
 
-    expect(result.name).toBe('phila-services')
-    expect(result.index_key).toMatch(/^idx_/)
-    expect(result.search_key).toMatch(/^srch_/)
+    expect(result).not.toBeNull()
+    expect(result!.name).toBe('phila-services')
+    expect(result!.index_key).toMatch(/^idx_/)
+    expect(result!.search_key).toMatch(/^srch_/)
 
-    indexKey = result.index_key
-    searchKey = result.search_key
+    indexKey = result!.index_key
+    searchKey = result!.search_key
 
     // Look up the index_id for direct service calls
     const row = await pool.query(

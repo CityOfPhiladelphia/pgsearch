@@ -42,8 +42,9 @@ describe('prompts service', () => {
 
   it('creates and reads a prompt', async () => {
     const created = await createPrompt(pool, indexId, 'navigator', sampleContent)
-    expect(created.name).toBe('navigator')
-    expect(created.content.model).toBe('anthropic.claude-haiku-4-5')
+    expect(created).not.toBeNull()
+    expect(created!.name).toBe('navigator')
+    expect(created!.content.model).toBe('anthropic.claude-haiku-4-5')
 
     const read = await getPrompt(pool, indexId, 'navigator')
     expect(read).not.toBeNull()
@@ -63,23 +64,35 @@ describe('prompts service', () => {
     expect(list.map(p => p.name)).toEqual(['a', 'b'])
   })
 
-  it('enforces unique (index_id, name)', async () => {
+  it('returns null on duplicate (index_id, name)', async () => {
     await createPrompt(pool, indexId, 'dupe', sampleContent)
-    await expect(createPrompt(pool, indexId, 'dupe', sampleContent)).rejects.toThrow()
+    const second = await createPrompt(pool, indexId, 'dupe', sampleContent)
+    expect(second).toBeNull()
   })
 
   it('updates a prompt content', async () => {
     await createPrompt(pool, indexId, 'p', sampleContent)
     const updated = { ...sampleContent, temperature: 0.7 }
-    await updatePrompt(pool, indexId, 'p', updated)
-    const read = await getPrompt(pool, indexId, 'p')
-    expect(read!.content.temperature).toBe(0.7)
+    const result = await updatePrompt(pool, indexId, 'p', updated)
+    expect(result).not.toBeNull()
+    expect(result!.content.temperature).toBe(0.7)
+  })
+
+  it('updatePrompt returns null for missing prompt', async () => {
+    const result = await updatePrompt(pool, indexId, 'never-existed', sampleContent)
+    expect(result).toBeNull()
   })
 
   it('deletes a prompt', async () => {
     await createPrompt(pool, indexId, 'gone', sampleContent)
-    await deletePrompt(pool, indexId, 'gone')
+    const deleted = await deletePrompt(pool, indexId, 'gone')
+    expect(deleted).toBe(true)
     const read = await getPrompt(pool, indexId, 'gone')
     expect(read).toBeNull()
+  })
+
+  it('deletePrompt returns false for missing prompt', async () => {
+    const deleted = await deletePrompt(pool, indexId, 'never-existed')
+    expect(deleted).toBe(false)
   })
 })

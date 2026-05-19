@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from
 import { Hono } from 'hono'
 import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
-import { createIndex, mintRagKey } from '../services/indexes'
+import { createIndex, mintKey } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { createPrompt } from '../services/prompts'
@@ -213,7 +213,7 @@ describe('ragAuth integration', () => {
 
   it('returns 401 UNAUTHORIZED when key is wrong but RAG is enabled', async () => {
     await createIndex(pool, { name: 'has-rag' })
-    await mintRagKey(pool, 'has-rag')
+    await mintKey(pool, 'has-rag', 'rag')
 
     const res = await app.request('/public/rag/has-rag?prompt=any', {
       method: 'POST',

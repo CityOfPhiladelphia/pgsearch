@@ -57,15 +57,9 @@ promptsRoutes.post('/public/index/:name/prompts', async (c) => {
 
   const index = c.get('index')
   const pool = await getPool()
-  try {
-    const created = await createPrompt(pool, index.index_id, body.name, v.content)
-    return c.json(created, 201)
-  } catch (err: any) {
-    if (err.code === '23505') {
-      return apiError(c, 'VALIDATION_ERROR', `Prompt '${body.name}' already exists`)
-    }
-    throw err
-  }
+  const created = await createPrompt(pool, index.index_id, body.name, v.content)
+  if (!created) return apiError(c, 'VALIDATION_ERROR', `Prompt '${body.name}' already exists`)
+  return c.json(created, 201)
 })
 
 promptsRoutes.get('/public/index/:name/prompts', async (c) => {
@@ -92,15 +86,7 @@ promptsRoutes.patch('/public/index/:name/prompts/:promptName', async (c) => {
 
   const index = c.get('index')
   const pool = await getPool()
-  try {
-    await updatePrompt(pool, index.index_id, promptName, v.content)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
-  const updated = await getPrompt(pool, index.index_id, promptName)
+  const updated = await updatePrompt(pool, index.index_id, promptName, v.content)
   if (!updated) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(updated)
 })
@@ -109,13 +95,7 @@ promptsRoutes.delete('/public/index/:name/prompts/:promptName', async (c) => {
   const promptName = c.req.param('promptName')
   const index = c.get('index')
   const pool = await getPool()
-  try {
-    await deletePrompt(pool, index.index_id, promptName)
-  } catch (err: any) {
-    if (err.message?.includes('not found')) {
-      return apiError(c, 'NOT_FOUND', err.message)
-    }
-    throw err
-  }
+  const deleted = await deletePrompt(pool, index.index_id, promptName)
+  if (!deleted) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json({ deleted: true })
 })
