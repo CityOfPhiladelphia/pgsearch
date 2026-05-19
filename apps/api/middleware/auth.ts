@@ -32,13 +32,9 @@ interface KeyAuthConfig {
 function keyAuth(config: KeyAuthConfig) {
   return createMiddleware<AppEnv>(async (c, next) => {
     const key = c.req.header(config.header)
-    if (!key) {
-      return apiError(c, 'UNAUTHORIZED', `Missing ${config.header} header`)
-    }
+    if (!key) return apiError(c, 'UNAUTHORIZED', `Missing ${config.header} header`)
     const indexName = c.req.param('name')
-    if (!indexName) {
-      return apiError(c, 'VALIDATION_ERROR', 'Missing index name')
-    }
+    if (!indexName) return apiError(c, 'VALIDATION_ERROR', 'Missing index name')
 
     const { getIndex } = await import('../services/indexes')
     const { getPool } = await import('../db/pool')
@@ -51,9 +47,7 @@ function keyAuth(config: KeyAuthConfig) {
     // (RAG not enabled) is informative to the caller but technically
     // indistinguishable from "wrong key" by verifyKey alone; collapsing them
     // keeps the middleware one shape and the API surface predictable.
-    if (!hash || !(await verifyKey(key, hash))) {
-      return apiError(c, 'UNAUTHORIZED', `Invalid ${config.keyLabel} key`)
-    }
+    if (!hash || !(await verifyKey(key, hash))) return apiError(c, 'UNAUTHORIZED', `Invalid ${config.keyLabel} key`)
 
     c.set('index', index)
     await next()

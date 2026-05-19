@@ -5,7 +5,7 @@ import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
-import { assertValid, type Schema } from '../middleware/validate'
+import { parseBody, type Schema } from '../middleware/validate'
 import {
   createPrompt,
   getPrompt,
@@ -46,9 +46,7 @@ const patchPromptSchema: Schema = {
 }
 
 promptsRoutes.post('/public/index/:name/prompts', withIndex(async ({ pool, index }, c) => {
-  const body = await c.req.json()
-  const { name, content } = assertValid<{ name: string; content: PromptContent }>(body, createPromptSchema)
-
+  const { name, content } = await parseBody<{ name: string; content: PromptContent }>(c, createPromptSchema)
   const created = await createPrompt(pool, index.index_id, name, content)
   if (!created) return apiError(c, 'VALIDATION_ERROR', `Prompt '${name}' already exists`)
   return c.json(created, 201)
@@ -68,9 +66,7 @@ promptsRoutes.get('/public/index/:name/prompts/:promptName', withIndex(async ({ 
 
 promptsRoutes.patch('/public/index/:name/prompts/:promptName', withIndex(async ({ pool, index }, c) => {
   const promptName = c.req.param('promptName')!
-  const body = await c.req.json()
-  const { content } = assertValid<{ content: PromptContent }>(body, patchPromptSchema)
-
+  const { content } = await parseBody<{ content: PromptContent }>(c, patchPromptSchema)
   const updated = await updatePrompt(pool, index.index_id, promptName, content)
   if (!updated) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(updated)

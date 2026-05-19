@@ -14,21 +14,15 @@ searchRoutes.use('/public/search/:name', searchAuth)
 
 searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) => {
   const q = c.req.query('q')
-  if (!q || typeof q !== 'string' || q.trim() === '') {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: q')
-  }
+  if (!q || q.trim() === '') return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: q')
 
   const limitParam = c.req.query('limit')
   const limit = limitParam ? parseInt(limitParam, 10) : 10
-  if (isNaN(limit) || limit < 1) {
-    return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
-  }
+  if (isNaN(limit) || limit < 1) return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
 
   const modeParam = c.req.query('mode') as SearchMode | undefined
   const validModes: SearchMode[] = ['hybrid', 'bm25', 'semantic']
-  if (modeParam && !validModes.includes(modeParam)) {
-    return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
-  }
+  if (modeParam && !validModes.includes(modeParam)) return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
 
   const adapter = getAdapter(index.config)
   const results = await hybridSearch(pool, index.index_id, adapter, q.trim(), { limit, mode: modeParam })

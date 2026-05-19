@@ -6,11 +6,13 @@ import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, 
 import { refreshIndex } from '../services/refresh'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
-import { assertValid, type Schema } from '../middleware/validate'
+import { parseBody, type Schema } from '../middleware/validate'
 import type { AppEnv } from '../types'
 
 const createIndexSchema: Schema = {
   name: [['typeof', 'string'], ['nonEmpty']],
+  'description?': ['typeof', 'string'],
+  'config?': ['object'],
 }
 
 // Typed Hono<AppEnv> even though admin routes don't read the `index` variable —
@@ -19,15 +21,9 @@ const createIndexSchema: Schema = {
 export const adminRoutes = new Hono<AppEnv>()
 
 adminRoutes.post('/private/key/admin/indexes', withPool(async ({ pool }, c) => {
-  const body = await c.req.json()
-  const { name } = assertValid<{ name: string }>(body, createIndexSchema)
-
-  const result = await createIndex(pool, {
-    name,
-    description: body.description,
-    config: body.config,
-  })
-  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${name}' already exists`)
+  const body = await parseBody<{ name: string; description?: string; config?: any }>(c, createIndexSchema)
+  const result = await createIndex(pool, body)
+  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${body.name}' already exists`)
   return c.json(result, 201)
 }))
 

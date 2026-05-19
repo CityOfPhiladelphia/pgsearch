@@ -1,9 +1,11 @@
 // ABOUTME: Tiny schema-based validator for incoming request bodies.
 // ABOUTME: Each schema entry maps a key to one or more validator tuples.
 
+import type { Context } from 'hono'
+
 // ValidationError bubbles to app.onError which translates it to a 400
-// VALIDATION_ERROR response. Routes don't catch it — they call assertValid
-// and let the global handler do the response shaping.
+// VALIDATION_ERROR response. Routes don't catch it — they call assertValid /
+// parseBody and let the global handler do the response shaping.
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -21,6 +23,7 @@ export type Rule =
   | readonly ['min', number]
   | readonly ['nonEmpty']
   | readonly ['array']
+  | readonly ['object']
   | readonly ['schema', Schema]
 
 export type Schema = {
@@ -65,6 +68,23 @@ export function assertValid<T = unknown>(input: unknown, schema: Schema): T {
   return result.value
 }
 
+// Parse a JSON request body, throwing ValidationError on malformed JSON.
+// Routes get a clean 400 (via app.onError) without their own try/catch.
+export async function parseJson(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json()
+  } catch {
+    throw new ValidationError('Request body must be valid JSON')
+  }
+}
+
+// Parse and validate in one call. Returns the body typed as T (the schema
+// drives the runtime shape; T is the static annotation the caller supplies).
+export async function parseBody<T = unknown>(c: Context, schema: Schema): Promise<T> {
+  const body = await parseJson(c)
+  return assertValid<T>(body, schema)
+}
+
 function normalizeRules(r: Rule | readonly Rule[]): readonly Rule[] {
   // A single Rule has a string verb at index 0; a list of Rules has an array.
   return Array.isArray(r[0]) ? (r as readonly Rule[]) : [r as Rule]
@@ -91,6 +111,11 @@ function applyRule(value: unknown, rule: Rule, key: string): string | null {
       return null
     case 'array':
       if (!Array.isArray(value)) return `${key} must be an array`
+      return null
+    case 'object':
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return `${key} must be an object`
+      }
       return null
     case 'schema': {
       const sub = validate(value, rule[1])

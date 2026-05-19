@@ -2,7 +2,8 @@
 // ABOUTME: Covers typeof / oneOf / min / nonEmpty / array / schema / optional + assertValid.
 
 import { describe, it, expect } from 'vitest'
-import { validate, assertValid, ValidationError } from '../middleware/validate'
+import { Hono } from 'hono'
+import { validate, assertValid, parseJson, parseBody, ValidationError } from '../middleware/validate'
 
 describe('validate', () => {
   it('accepts a body that matches a simple typeof schema', () => {
@@ -67,6 +68,16 @@ describe('validate', () => {
     expect(validate({ items: [] }, schema).ok).toBe(true)
   })
 
+  it('object rejects null, arrays, and primitives', () => {
+    const schema = { x: ['object'] } as const
+    expect(validate({ x: null }, schema).ok).toBe(false)
+    expect(validate({ x: [] }, schema).ok).toBe(false)
+    expect(validate({ x: 'foo' }, schema).ok).toBe(false)
+    expect(validate({ x: 42 }, schema).ok).toBe(false)
+    expect(validate({ x: {} }, schema).ok).toBe(true)
+    expect(validate({ x: { y: 1 } }, schema).ok).toBe(true)
+  })
+
   it('schema rule recurses into nested objects', () => {
     const subSchema = { x: ['typeof', 'number'] } as const
     const schema = { obj: ['schema', subSchema] } as const
@@ -94,5 +105,76 @@ describe('assertValid', () => {
   it('throws ValidationError on failure', () => {
     expect(() => assertValid({}, { name: ['typeof', 'string'] })).toThrow(ValidationError)
     expect(() => assertValid({}, { name: ['typeof', 'string'] })).toThrow(/name is required/)
+  })
+})
+
+describe('parseJson / parseBody', () => {
+  // Small Hono app: route under test on POST /, ValidationError → 400 in onError.
+  function buildApp(handler: (c: any) => Promise<Response>) {
+    const app = new Hono()
+    app.post('/', handler)
+    app.onError((err, c) => {
+      if (err instanceof ValidationError) return c.json({ error: err.message }, 400)
+      throw err
+    })
+    return app
+  }
+
+  it('parseJson returns the parsed body for valid JSON', async () => {
+    const app = buildApp(async (c) => {
+      const body = await parseJson(c)
+      return c.json({ received: body })
+    })
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ x: 1 }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ received: { x: 1 } })
+  })
+
+  it('parseJson returns 400 on malformed JSON', async () => {
+    const app = buildApp(async (c) => {
+      await parseJson(c)
+      return c.json({ ok: true })
+    })
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json',
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Request body must be valid JSON' })
+  })
+
+  it('parseBody parses then validates', async () => {
+    const schema = { name: [['typeof', 'string'], ['nonEmpty']] } as const
+    const app = buildApp(async (c) => {
+      const body = await parseBody<{ name: string }>(c, schema)
+      return c.json(body)
+    })
+
+    const ok = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'foo' }),
+    })
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toEqual({ name: 'foo' })
+
+    const bad = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '' }),
+    })
+    expect(bad.status).toBe(400)
+
+    const malformed = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    })
+    expect(malformed.status).toBe(400)
   })
 })

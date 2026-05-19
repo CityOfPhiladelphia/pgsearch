@@ -5,7 +5,7 @@ import { Hono } from 'hono'
 import { ragAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
-import { assertValid, type Schema } from '../middleware/validate'
+import { parseBody, type Schema } from '../middleware/validate'
 import { getAdapter } from '../services/adapter'
 import { getLlmAdapter } from '../services/llm-adapter'
 import { getPrompt } from '../services/prompts'
@@ -22,23 +22,15 @@ ragRoutes.use('/public/rag/:name', ragAuth)
 
 ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
   const promptName = c.req.query('prompt')
-  if (!promptName) {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: prompt')
-  }
+  if (!promptName) return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: prompt')
 
-  let body: any
-  try {
-    body = await c.req.json()
-  } catch {
-    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON')
-  }
-
-  const { question, messages } = assertValid<{ question: string; messages?: { role: 'user' | 'assistant'; content: string }[] }>(body, ragRequestSchema)
+  const { question, messages } = await parseBody<{
+    question: string
+    messages?: { role: 'user' | 'assistant'; content: string }[]
+  }>(c, ragRequestSchema)
 
   const prompt = await getPrompt(pool, index.index_id, promptName)
-  if (!prompt) {
-    return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
-  }
+  if (!prompt) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
 
   const embedAdapter = getAdapter(index.config)
   const llmAdapter = getLlmAdapter(prompt.content)
@@ -49,6 +41,5 @@ ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
     question: question.trim(),
     messages,
   })
-
   return c.json(result, 200)
 }))
