@@ -3,7 +3,7 @@
 
 # pgsearch
 
-PostgreSQL hybrid search service combining BM25F full-text keyword scoring with pgvector semantic similarity search. Multi-tenant — each index has independent configuration, authentication keys, and scoring parameters. Designed for municipal-scale content (city services, programs, articles) where operational simplicity matters more than peak throughput.
+PostgreSQL hybrid search + RAG service combining BM25F full-text keyword scoring with pgvector semantic similarity search, layered with a synthesis endpoint that produces grounded answers with inline citations. Multi-tenant — each index has independent configuration, authentication keys, scoring parameters, and prompts. Designed for moderate-scale content (tens of thousands to low hundreds of thousands of documents per index) where operational simplicity matters more than peak throughput.
 
 ## Key concepts
 
@@ -73,7 +73,7 @@ pnpm run build
 city deploy dev    # or test, prod
 ```
 
-Requires AWS CLI configured with SSO and the `phila-pgsearch` profile. See the [phila-ctl documentation](https://github.com/CityOfPhiladelphia/phila-ctl) for CLI setup and deployment details.
+Requires AWS CLI configured with SSO and the profile name listed under your environment in `city.config.json`. See the [phila-ctl documentation](https://github.com/CityOfPhiladelphia/phila-ctl) for CLI setup and deployment details.
 
 ## Development
 

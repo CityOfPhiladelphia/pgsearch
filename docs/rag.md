@@ -48,9 +48,9 @@ curl -X POST https://<api-url>/public/index/my-index/prompts \
   -H "x-index-key: $INDEX_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "navigator",
+    "name": "support",
     "content": {
-      "system": "You are the City of Philadelphia digital navigator. Answer concisely using only the provided sources. If the answer is not in the sources, say so.",
+      "system": "You are a support assistant. Answer concisely using only the provided sources. If the answer is not in the sources, say so and recommend who to contact.",
       "response_format": "Cite sources inline as [N] matching the Source [N] numbers above.",
       "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
       "max_tokens": 1024,
@@ -69,27 +69,27 @@ curl -X POST https://<api-url>/public/index/my-index/prompts \
 ## Ask a question
 
 ```bash
-curl -X POST "https://<api-url>/public/rag/my-index?prompt=navigator" \
+curl -X POST "https://<api-url>/public/rag/my-index?prompt=support" \
   -H "x-rag-key: $RAG_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "question": "How do I apply for a parking permit?" }'
+  -d '{ "question": "How do I reset my account password?" }'
 ```
 
 Response:
 
 ```json
 {
-  "answer": "You can apply online or in person at the Streets Department [1]. Veterans qualify for a reduced fee [2].",
+  "answer": "Submit a reset request through the account portal [1]. The reset link is sent to your verified email within five minutes [2].",
   "citations": [
-    { "marker": 1, "external_id": "parking-apply", "title": "...", "url": "...", "snippet": "..." },
-    { "marker": 2, "external_id": "parking-veterans", "title": "...", "url": "...", "snippet": "..." }
+    { "marker": 1, "external_id": "account-reset", "title": "...", "url": "...", "snippet": "..." },
+    { "marker": 2, "external_id": "email-delivery", "title": "...", "url": "...", "snippet": "..." }
   ],
   "retrieved": [
-    { "external_id": "parking-apply", "score": 0.83, "used": true },
-    { "external_id": "parking-veterans", "score": 0.71, "used": true }
+    { "external_id": "account-reset", "score": 0.83, "used": true },
+    { "external_id": "email-delivery", "score": 0.71, "used": true }
   ],
   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-  "prompt": "navigator",
+  "prompt": "support",
   "usage": { "input_tokens": 2341, "output_tokens": 187 },
   "history_sig": null
 }
@@ -101,10 +101,10 @@ The endpoint is stateless. To carry conversation history, pass prior turns in `m
 
 ```json
 {
-  "question": "What about for veterans?",
+  "question": "What if the email doesn't arrive?",
   "messages": [
-    { "role": "user", "content": "How do I apply for a parking permit?" },
-    { "role": "assistant", "content": "You can apply online..." }
+    { "role": "user", "content": "How do I reset my account password?" },
+    { "role": "assistant", "content": "Submit a reset request through the account portal..." }
   ]
 }
 ```
@@ -118,16 +118,16 @@ Retrieval still runs against the latest `question` only — searching the full h
 curl https://<api-url>/public/index/my-index/prompts -H "x-index-key: $INDEX_KEY"
 
 # Read
-curl https://<api-url>/public/index/my-index/prompts/navigator -H "x-index-key: $INDEX_KEY"
+curl https://<api-url>/public/index/my-index/prompts/support -H "x-index-key: $INDEX_KEY"
 
 # Update (replace content)
-curl -X PATCH https://<api-url>/public/index/my-index/prompts/navigator \
+curl -X PATCH https://<api-url>/public/index/my-index/prompts/support \
   -H "x-index-key: $INDEX_KEY" \
   -H "Content-Type: application/json" \
   -d '{"content": {...}}'
 
 # Delete
-curl -X DELETE https://<api-url>/public/index/my-index/prompts/navigator \
+curl -X DELETE https://<api-url>/public/index/my-index/prompts/support \
   -H "x-index-key: $INDEX_KEY"
 ```
 
