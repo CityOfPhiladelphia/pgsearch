@@ -54,13 +54,15 @@ See [Getting Started](docs/getting-started.md) for a full walkthrough.
 
 ```
 pgsearch/
-├── apps/api/          # Lambda search service (Hono + PostgreSQL + pgvector)
-├── apps/crawler/      # phila.gov web crawler (Crawlee + parse pipelines)
-├── packages/client/   # @phila/pgsearch-client TypeScript SDK
-├── packages/embeddings/ # @phila/search-embeddings (pluggable adapter interface)
-├── packages/parse/    # @phila/search-parse (composable HTML→markdown pipeline)
-├── cdk/               # AWS CDK infrastructure
-└── docs/              # Documentation
+├── apps/api/             # Lambda search + RAG service (Hono + PostgreSQL + pgvector)
+├── apps/crawler/         # phila.gov web crawler (Crawlee + parse pipelines)
+├── packages/client/      # @phila/pgsearch-client TypeScript SDK
+├── packages/embeddings/  # @phila/search-embeddings (adapter + Bedrock Titan)
+├── packages/llm/         # @phila/llm (adapter + Bedrock Claude)
+├── packages/bedrock-client/ # @phila/bedrock-client (shared lazy SDK client)
+├── packages/parse/       # @phila/search-parse (composable HTML→markdown pipeline)
+├── cdk/                  # AWS CDK infrastructure
+└── docs/                 # Documentation
 ```
 
 ## Deployment

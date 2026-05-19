@@ -11,6 +11,25 @@ Retrieval-augmented generation (RAG) layered atop hybrid search. The RAG endpoin
 - **RAG key** — `x-rag-key`, minted lazily by admin per index. Separate from `x-search-key` and `x-index-key`. Lets you grant and revoke LLM-spend access independently of read access.
 - **Inline citations** — the LLM is instructed to cite sources as `[N]` matching the 1-indexed `Source [N]:` blocks it received. The response parses these markers into a `citations` array.
 
+## Prerequisites for a new AWS account
+
+Before any Anthropic model call will succeed on a fresh Bedrock-enabled account:
+
+1. **Model access** — request access to the Claude model family in the Bedrock console (us-east-1 → Model access). System-defined inference profiles inherit access from their underlying foundation models.
+2. **Anthropic use-case details form** — Bedrock requires a one-time form submission per account before Anthropic models will respond. Takes a few minutes; propagation can take up to 15 minutes.
+3. **Marketplace permissions on the Lambda role** — Anthropic models are delivered via AWS Marketplace; the execution role needs `aws-marketplace:ViewSubscriptions` and `aws-marketplace:Subscribe` in addition to `bedrock:InvokeModel`. The CDK in `cdk/app.ts` already grants these.
+4. **Model-specific IAM** — for inference profile IDs (e.g., `us.anthropic.claude-haiku-4-5-...`), the role needs `bedrock:InvokeModel` on **both** the profile ARN and the underlying foundation model ARN in **every region the profile may route to** (us-east-1, us-east-2, us-west-2 for `us.*`). Adding a new Claude model means updating the CDK ARN list.
+
+## Choosing a model ID
+
+Bedrock now requires inference profiles for most current Claude models. Use the profile ID (e.g., `us.anthropic.claude-haiku-4-5-20251001-v1:0`), not the raw foundation model ID. The adapter accepts both `anthropic.*` (legacy direct-invoke) and `<region>.anthropic.*` (inference profile) shapes.
+
+To list available profiles:
+
+```bash
+aws bedrock list-inference-profiles --query "inferenceProfileSummaries[].inferenceProfileId"
+```
+
 ## Enable RAG for an index
 
 ```bash
@@ -33,7 +52,7 @@ curl -X POST https://<api-url>/public/index/my-index/prompts \
     "content": {
       "system": "You are the City of Philadelphia digital navigator. Answer concisely using only the provided sources. If the answer is not in the sources, say so.",
       "response_format": "Cite sources inline as [N] matching the Source [N] numbers above.",
-      "model": "anthropic.claude-haiku-4-5",
+      "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
       "max_tokens": 1024,
       "temperature": 0.2,
       "retrieval": {
@@ -69,7 +88,7 @@ Response:
     { "external_id": "parking-apply", "score": 0.83, "used": true },
     { "external_id": "parking-veterans", "score": 0.71, "used": true }
   ],
-  "model": "anthropic.claude-haiku-4-5",
+  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "prompt": "navigator",
   "usage": { "input_tokens": 2341, "output_tokens": 187 },
   "history_sig": null
@@ -127,6 +146,7 @@ Nulls the stored hash. The endpoint will return 403 with "RAG is not enabled for
 - **Prompt is the only tunable surface.** Model, temperature, retrieval params all live on the prompt. To experiment with a different model, create another prompt.
 - **Inline `[N]` markers.** Citations are parsed from `[N]` in the answer text. Other formats (footnotes, brackets with text) are ignored.
 - **Synchronous response.** No streaming yet. Expect ~3–10s for typical Claude Haiku responses.
+- **Per-prompt model selection.** The prompt record controls the model. Different use cases get different prompts, not different request parameters.
 - **Caller-owned history.** Pass `messages`; the server never stores them.
 
 ## Things to be aware of
