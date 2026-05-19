@@ -6,7 +6,12 @@ import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, 
 import { refreshIndex } from '../services/refresh'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
+import { assertValid, type Schema } from '../middleware/validate'
 import type { AppEnv } from '../types'
+
+const createIndexSchema: Schema = {
+  name: [['typeof', 'string'], ['nonEmpty']],
+}
 
 // Typed Hono<AppEnv> even though admin routes don't read the `index` variable —
 // matches what the withPool HOF expects so Hono's path-param inference flows
@@ -15,15 +20,14 @@ export const adminRoutes = new Hono<AppEnv>()
 
 adminRoutes.post('/private/key/admin/indexes', withPool(async ({ pool }, c) => {
   const body = await c.req.json()
-  if (!body.name || typeof body.name !== 'string') {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required field: name (string)')
-  }
+  const { name } = assertValid<{ name: string }>(body, createIndexSchema)
+
   const result = await createIndex(pool, {
-    name: body.name,
+    name,
     description: body.description,
     config: body.config,
   })
-  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${body.name}' already exists`)
+  if (!result) return apiError(c, 'VALIDATION_ERROR', `Index '${name}' already exists`)
   return c.json(result, 201)
 }))
 

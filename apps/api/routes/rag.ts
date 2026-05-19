@@ -5,11 +5,17 @@ import { Hono } from 'hono'
 import { ragAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
+import { assertValid, type Schema } from '../middleware/validate'
 import { getAdapter } from '../services/adapter'
 import { getLlmAdapter } from '../services/llm-adapter'
 import { getPrompt } from '../services/prompts'
 import { runRag } from '../services/rag'
 import type { AppEnv } from '../types'
+
+const ragRequestSchema: Schema = {
+  question: [['typeof', 'string'], ['nonEmpty']],
+  'messages?': ['array'],
+}
 
 export const ragRoutes = new Hono<AppEnv>()
 ragRoutes.use('/public/rag/:name', ragAuth)
@@ -27,12 +33,7 @@ ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON')
   }
 
-  if (!body.question || typeof body.question !== 'string' || body.question.trim() === '') {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required field: question (string)')
-  }
-  if (body.messages !== undefined && !Array.isArray(body.messages)) {
-    return apiError(c, 'VALIDATION_ERROR', 'messages must be an array')
-  }
+  const { question, messages } = assertValid<{ question: string; messages?: { role: 'user' | 'assistant'; content: string }[] }>(body, ragRequestSchema)
 
   const prompt = await getPrompt(pool, index.index_id, promptName)
   if (!prompt) {
@@ -45,8 +46,8 @@ ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
   const result = await runRag(pool, index.index_id, embedAdapter, llmAdapter, {
     promptName,
     promptContent: prompt.content,
-    question: body.question.trim(),
-    messages: body.messages,
+    question: question.trim(),
+    messages,
   })
 
   return c.json(result, 200)

@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
+import { assertValid, type Schema } from '../middleware/validate'
 import {
   createPrompt,
   getPrompt,
@@ -18,45 +19,38 @@ export const promptsRoutes = new Hono<AppEnv>()
 promptsRoutes.use('/public/index/:name/prompts', indexAuth)
 promptsRoutes.use('/public/index/:name/prompts/*', indexAuth)
 
-function validateContent(c: any): { ok: true; content: PromptContent } | { ok: false; message: string } {
-  if (!c || typeof c !== 'object') return { ok: false, message: 'content must be an object' }
-  const required: (keyof PromptContent)[] = ['system', 'response_format', 'model', 'max_tokens', 'temperature', 'retrieval']
-  for (const key of required) {
-    if (!(key in c)) return { ok: false, message: `content.${key} is required` }
-  }
-  if (typeof c.system !== 'string') return { ok: false, message: 'content.system must be a string' }
-  if (typeof c.response_format !== 'string') return { ok: false, message: 'content.response_format must be a string' }
-  if (typeof c.model !== 'string') return { ok: false, message: 'content.model must be a string' }
-  if (typeof c.max_tokens !== 'number') return { ok: false, message: 'content.max_tokens must be a number' }
-  if (typeof c.temperature !== 'number') return { ok: false, message: 'content.temperature must be a number' }
-  if (!c.retrieval || typeof c.retrieval !== 'object') return { ok: false, message: 'content.retrieval must be an object' }
-  const r = c.retrieval
-  const validModes = ['hybrid', 'bm25', 'semantic']
-  if (!validModes.includes(r.mode)) {
-    return { ok: false, message: `content.retrieval.mode must be one of: ${validModes.join(', ')}` }
-  }
-  if (typeof r.limit !== 'number' || r.limit < 1) {
-    return { ok: false, message: 'content.retrieval.limit must be a positive number' }
-  }
-  if (typeof r.max_chunks_per_doc !== 'number' || r.max_chunks_per_doc < 1) {
-    return { ok: false, message: 'content.retrieval.max_chunks_per_doc must be >= 1' }
-  }
-  if (typeof r.min_bm25_score !== 'number' || typeof r.min_vector_score !== 'number') {
-    return { ok: false, message: 'content.retrieval.min_bm25_score and min_vector_score must be numbers' }
-  }
-  return { ok: true, content: c as PromptContent }
+const retrievalSchema: Schema = {
+  mode: ['oneOf', ['hybrid', 'bm25', 'semantic']],
+  limit: [['typeof', 'number'], ['min', 1]],
+  max_chunks_per_doc: [['typeof', 'number'], ['min', 1]],
+  min_bm25_score: ['typeof', 'number'],
+  min_vector_score: ['typeof', 'number'],
+}
+
+const promptContentSchema: Schema = {
+  system: ['typeof', 'string'],
+  response_format: ['typeof', 'string'],
+  model: ['typeof', 'string'],
+  max_tokens: ['typeof', 'number'],
+  temperature: ['typeof', 'number'],
+  retrieval: ['schema', retrievalSchema],
+}
+
+const createPromptSchema: Schema = {
+  name: [['typeof', 'string'], ['nonEmpty']],
+  content: ['schema', promptContentSchema],
+}
+
+const patchPromptSchema: Schema = {
+  content: ['schema', promptContentSchema],
 }
 
 promptsRoutes.post('/public/index/:name/prompts', withIndex(async ({ pool, index }, c) => {
   const body = await c.req.json()
-  if (!body.name || typeof body.name !== 'string') {
-    return apiError(c, 'VALIDATION_ERROR', 'Missing required field: name (string)')
-  }
-  const v = validateContent(body.content)
-  if (!v.ok) return apiError(c, 'VALIDATION_ERROR', v.message)
+  const { name, content } = assertValid<{ name: string; content: PromptContent }>(body, createPromptSchema)
 
-  const created = await createPrompt(pool, index.index_id, body.name, v.content)
-  if (!created) return apiError(c, 'VALIDATION_ERROR', `Prompt '${body.name}' already exists`)
+  const created = await createPrompt(pool, index.index_id, name, content)
+  if (!created) return apiError(c, 'VALIDATION_ERROR', `Prompt '${name}' already exists`)
   return c.json(created, 201)
 }))
 
@@ -75,10 +69,9 @@ promptsRoutes.get('/public/index/:name/prompts/:promptName', withIndex(async ({ 
 promptsRoutes.patch('/public/index/:name/prompts/:promptName', withIndex(async ({ pool, index }, c) => {
   const promptName = c.req.param('promptName')!
   const body = await c.req.json()
-  const v = validateContent(body.content)
-  if (!v.ok) return apiError(c, 'VALIDATION_ERROR', v.message)
+  const { content } = assertValid<{ content: PromptContent }>(body, patchPromptSchema)
 
-  const updated = await updatePrompt(pool, index.index_id, promptName, v.content)
+  const updated = await updatePrompt(pool, index.index_id, promptName, content)
   if (!updated) return apiError(c, 'NOT_FOUND', `Prompt '${promptName}' not found`)
   return c.json(updated)
 }))
