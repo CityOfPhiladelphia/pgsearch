@@ -5,7 +5,7 @@ import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { LlmAdapter } from '@phila/llm'
 import { hybridSearch } from './search'
-import type { PromptContent, RagResponse, Citation, RetrievedRef } from '../types'
+import type { SearchIndex, PromptContent, RagResponse, Citation, RetrievedRef } from '../types'
 
 export interface RunRagInput {
   promptName: string
@@ -16,7 +16,7 @@ export interface RunRagInput {
 
 export async function runRag(
   pool: Pool,
-  indexId: number,
+  index: SearchIndex,
   embedAdapter: EmbeddingAdapter,
   llmAdapter: LlmAdapter,
   input: RunRagInput,
@@ -24,7 +24,7 @@ export async function runRag(
   const { promptName, promptContent, question } = input
   const messages = input.messages ?? []
 
-  const searchResponse = await hybridSearch(pool, indexId, embedAdapter, question, {
+  const searchResponse = await hybridSearch(pool, index, embedAdapter, question, {
     mode: promptContent.retrieval.mode,
     limit: promptContent.retrieval.limit,
     maxChunksPerDoc: promptContent.retrieval.max_chunks_per_doc,

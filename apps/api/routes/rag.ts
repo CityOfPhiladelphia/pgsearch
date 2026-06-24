@@ -35,7 +35,7 @@ ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
   const embedAdapter = getAdapter(index.config)
   const llmAdapter = getLlmAdapter(prompt.content)
 
-  const result = await runRag(pool, index.index_id, embedAdapter, llmAdapter, {
+  const result = await runRag(pool, index, embedAdapter, llmAdapter, {
     promptName,
     promptContent: prompt.content,
     question: question.trim(),

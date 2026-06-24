@@ -3,10 +3,10 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
-import { createIndex } from '../services/indexes'
+import { createIndex, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
-import { hybridSearch } from '../services/search'
+import { hybridSearch, type HybridSearchOptions } from '../services/search'
 import { createBedrockAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import {
@@ -56,6 +56,10 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   let indexKey: string
   let searchKey: string
   const config = mergeConfig({})
+
+  // Fetch a fresh index per query, mirroring how the route resolves it from auth.
+  const search = async (queryText: string, options: HybridSearchOptions = {}) =>
+    hybridSearch(pool, (await getIndex(pool, 'phila-services'))!, adapter, queryText, options)
 
   beforeAll(async () => {
     pool = await getTestPool()
@@ -164,7 +168,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('hybrid search for "pay water bill" returns water-related results', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'pay water bill', { limit: 5 })
+    const results = await search('pay water bill', { limit: 5 })
 
     expect(results.results.length).toBeGreaterThan(0)
     console.log(`\n  Search: "pay water bill" → ${results.total} docs`)
@@ -179,7 +183,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('hybrid search for "building permit" returns permit-related results', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'building permit', { limit: 5 })
+    const results = await search('building permit', { limit: 5 })
 
     expect(results.results.length).toBeGreaterThan(0)
     console.log(`\n  Search: "building permit" → ${results.total} docs`)
@@ -189,7 +193,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('hybrid search for "trash garbage dumping" returns sanitation results', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'trash garbage dumping', { limit: 5 })
+    const results = await search('trash garbage dumping', { limit: 5 })
 
     expect(results.results.length).toBeGreaterThan(0)
     console.log(`\n  Search: "trash garbage dumping" → ${results.total} docs`)
@@ -199,7 +203,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('hybrid search for "property tax relief seniors" returns tax-related results', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'property tax relief seniors', { limit: 5 })
+    const results = await search('property tax relief seniors', { limit: 5 })
 
     expect(results.results.length).toBeGreaterThan(0)
     console.log(`\n  Search: "property tax relief seniors" → ${results.total} docs`)
@@ -211,7 +215,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   // --- Natural language / edge case queries ---
 
   it('problem description: "my water bill seems way too high"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'my water bill seems way too high', { limit: 5 })
+    const results = await search('my water bill seems way too high', { limit: 5 })
     console.log(`\n  Search: "my water bill seems way too high" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -221,7 +225,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('no keyword overlap: "someone left a couch on my sidewalk"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'someone left a couch on my sidewalk', { limit: 5 })
+    const results = await search('someone left a couch on my sidewalk', { limit: 5 })
     console.log(`\n  Search: "someone left a couch on my sidewalk" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -231,7 +235,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('colloquial: "do I need a permit to redo my kitchen"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'do I need a permit to redo my kitchen', { limit: 5 })
+    const results = await search('do I need a permit to redo my kitchen', { limit: 5 })
     console.log(`\n  Search: "do I need a permit to redo my kitchen" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -241,7 +245,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('ambiguous intent: "I owe the city money"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'I owe the city money', { limit: 5 })
+    const results = await search('I owe the city money', { limit: 5 })
     console.log(`\n  Search: "I owe the city money" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -251,7 +255,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('adjacent vocabulary: "shots for my baby"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'shots for my baby', { limit: 5 })
+    const results = await search('shots for my baby', { limit: 5 })
     console.log(`\n  Search: "shots for my baby" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -261,7 +265,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('spanish: "como pago mi cuenta de agua"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'como pago mi cuenta de agua', { limit: 5 })
+    const results = await search('como pago mi cuenta de agua', { limit: 5 })
     console.log(`\n  Search: "como pago mi cuenta de agua" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -271,7 +275,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('typos: "bilding permt application"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'bilding permt application', { limit: 5 })
+    const results = await search('bilding permt application', { limit: 5 })
     console.log(`\n  Search: "bilding permt application" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
@@ -281,7 +285,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   }, 30_000)
 
   it('vague: "what do I need to start construction"', async () => {
-    const results = await hybridSearch(pool, indexId, adapter, 'what do I need to start construction', { limit: 5 })
+    const results = await search('what do I need to start construction', { limit: 5 })
     console.log(`\n  Search: "what do I need to start construction" → ${results.total} docs`)
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)

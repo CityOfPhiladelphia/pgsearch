@@ -3,7 +3,7 @@
 
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
-import type { SearchResponse, SearchResult } from '../types'
+import type { SearchIndex, SearchResponse, SearchResult } from '../types'
 import { computeBM25F, computeRRF } from './score'
 
 export interface VectorCandidate {
@@ -93,30 +93,21 @@ async function stemQueryTerms(pool: Pool, queryText: string, config: string): Pr
 
 export async function hybridSearch(
   pool: Pool,
-  indexId: number,
+  index: SearchIndex,
   adapter: EmbeddingAdapter,
   queryText: string,
   options: HybridSearchOptions = {},
 ): Promise<SearchResponse> {
+  const indexId = index.index_id
   const limit = options.limit ?? 10
   const mode = options.mode ?? 'hybrid'
   const runBm25 = mode !== 'semantic'
   const runVector = mode !== 'bm25'
 
-  // Load index config and statistics
-  const indexRow = await pool.query(
-    `SELECT config, total_documents, avg_title_length, avg_body_length
-     FROM search_indexes WHERE index_id = $1`,
-    [indexId],
-  )
-  if (indexRow.rows.length === 0) {
-    throw new Error(`Index ${indexId} not found`)
-  }
-  const idx = indexRow.rows[0]
-  const config = typeof idx.config === 'string' ? JSON.parse(idx.config) : idx.config
-  const totalDocuments: number = parseInt(idx.total_documents, 10)
-  const avgTitleLength: number = parseFloat(idx.avg_title_length)
-  const avgBodyLength: number = parseFloat(idx.avg_body_length)
+  const config = index.config
+  const totalDocuments = Number(index.total_documents)
+  const avgTitleLength = Number(index.avg_title_length)
+  const avgBodyLength = Number(index.avg_body_length)
 
   const textSearchConfig: string = config.text_search_config || 'english'
   const k1: number = config.bm25_k1 ?? 1.2

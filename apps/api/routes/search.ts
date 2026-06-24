@@ -25,6 +25,6 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   if (modeParam && !validModes.includes(modeParam)) return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
 
   const adapter = getAdapter(index.config)
-  const results = await hybridSearch(pool, index.index_id, adapter, q.trim(), { limit, mode: modeParam })
+  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam })
   return c.json(results, 200)
 }))

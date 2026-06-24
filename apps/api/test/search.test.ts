@@ -3,10 +3,10 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, closePool } from './setup'
-import { createIndex } from '../services/indexes'
+import { createIndex, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
-import { vectorCandidates, hybridSearch } from '../services/search'
+import { vectorCandidates, hybridSearch, type HybridSearchOptions } from '../services/search'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
@@ -16,6 +16,11 @@ describe('search', () => {
   let indexId: number
   const adapter = createTestAdapter(384)
   const config = mergeConfig({})
+
+  // Fetch a fresh index per query, mirroring how the route resolves it from auth on
+  // each request — keeps BM25 corpus stats current after refreshes.
+  const search = async (queryText: string, options: HybridSearchOptions = {}) =>
+    hybridSearch(pool, (await getIndex(pool, 'search-test'))!, adapter, queryText, options)
 
   beforeAll(async () => {
     await setupSchema()
@@ -66,7 +71,7 @@ describe('search', () => {
 
   describe('hybrid search', () => {
     it('returns results with scores, titles, snippets, and metadata', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
+      const results = await search('parking permit', { limit: 10 })
       expect(results.results.length).toBeGreaterThan(0)
       expect(results.results[0]).toHaveProperty('external_id')
       expect(results.results[0]).toHaveProperty('score')
@@ -86,13 +91,13 @@ describe('search', () => {
       }, config, { max_segment_tokens: 15 })
       await refreshIndex(pool, indexId)
 
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 10 })
+      const results = await search('parking', { limit: 10 })
       const multiSegmentResults = results.results.filter(r => r.external_id === 'multi-segment')
       expect(multiSegmentResults.length).toBeLessThanOrEqual(1)
     })
 
     it('returns empty results for no matches', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10 })
+      const results = await search('xyzzynonexistent', { limit: 10 })
       // May still get vector results (semantic similarity), but at least verifies no crash
       expect(results.results).toBeDefined()
       expect(results.query).toBe('xyzzynonexistent')
@@ -101,25 +106,25 @@ describe('search', () => {
 
   describe('search mode', () => {
     it('mode=bm25 returns only keyword matches', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'bm25' })
+      const results = await search('parking permit', { limit: 10, mode: 'bm25' })
       expect(results.results.length).toBeGreaterThan(0)
       expect(results.query).toBe('parking permit')
     })
 
     it('mode=bm25 returns empty for queries with no keyword matches', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'bm25' })
+      const results = await search('xyzzynonexistent', { limit: 10, mode: 'bm25' })
       expect(results.results).toEqual([])
       expect(results.total).toBe(0)
     })
 
     it('mode=semantic returns results even without keyword matches', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'xyzzynonexistent', { limit: 10, mode: 'semantic' })
+      const results = await search('xyzzynonexistent', { limit: 10, mode: 'semantic' })
       expect(results.results.length).toBeGreaterThan(0)
     })
 
     it('defaults to hybrid when mode is not specified', async () => {
-      const hybrid = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
-      const explicit = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10, mode: 'hybrid' })
+      const hybrid = await search('parking permit', { limit: 10 })
+      const explicit = await search('parking permit', { limit: 10, mode: 'hybrid' })
       expect(hybrid.results.length).toBe(explicit.results.length)
       expect(hybrid.results[0].score).toBeCloseTo(explicit.results[0].score, 5)
     })
@@ -127,7 +132,7 @@ describe('search', () => {
 
   describe('RRF fusion', () => {
     it('scores follow RRF pattern (small positive values)', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking permit', { limit: 10 })
+      const results = await search('parking permit', { limit: 10 })
       expect(results.results.length).toBeGreaterThan(0)
       for (const r of results.results) {
         // RRF scores are small: max is w/(k+1) per retriever, so ~0.033 for two equal-weight retrievers
@@ -139,7 +144,7 @@ describe('search', () => {
     it('candidates appearing in both passes score higher than single-pass', async () => {
       // "parking" matches via BM25 (keyword) and should also have vector similarity
       // Documents that appear in both passes get two RRF contributions
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 10 })
+      const results = await search('parking', { limit: 10 })
       expect(results.results.length).toBeGreaterThan(1)
       // The top result should score higher than the bottom — both-pass candidates rise
       expect(results.results[0].score).toBeGreaterThan(results.results[results.results.length - 1].score)
@@ -147,7 +152,7 @@ describe('search', () => {
 
     it('score floors exclude weak candidates', async () => {
       // With an impossibly high vector floor, semantic pass contributes nothing
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+      const results = await search('parking', {
         limit: 10,
         mode: 'semantic',
         minVectorScore: 0.99,
@@ -170,13 +175,13 @@ describe('search', () => {
     })
 
     it('defaults to 1 (best segment per document)', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 20 })
+      const results = await search('parking', { limit: 20 })
       const docIds = results.results.map(r => r.external_id)
       expect(new Set(docIds).size).toBe(docIds.length)
     })
 
     it('with maxChunksPerDoc=3 returns up to 3 segments per document', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+      const results = await search('parking', {
         limit: 20, maxChunksPerDoc: 3,
       })
       const counts = new Map<string, number>()
@@ -191,7 +196,7 @@ describe('search', () => {
     })
 
     it('respects per-doc cap when one doc has many strong segments', async () => {
-      const results = await hybridSearch(pool, indexId, adapter, 'parking', {
+      const results = await search('parking', {
         limit: 50, maxChunksPerDoc: 2,
       })
       const counts = new Map<string, number>()
