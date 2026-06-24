@@ -6,6 +6,7 @@ import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
 import { chunkText, countTokens } from './chunk'
+import { checkAndRefresh } from './refresh'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -80,6 +81,7 @@ export async function ingestDocument(
   const textSearchConfig = config.text_search_config || 'english'
 
   // Execute everything in a transaction
+  let response: IngestResponse
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -164,7 +166,7 @@ export async function ingestDocument(
 
     await client.query('COMMIT')
 
-    return {
+    response = {
       external_id: request.external_id,
       segments: storedSegmentCount,
       changed: changed.size,
@@ -177,6 +179,13 @@ export async function ingestDocument(
   } finally {
     client.release()
   }
+
+  // Auto-refresh once enough documents have changed. Runs after the transaction
+  // commits and the client is released, since REFRESH MATERIALIZED VIEW cannot run
+  // inside a transaction block.
+  await checkAndRefresh(pool, indexId, config.refresh_threshold)
+
+  return response
 }
 
 export async function deleteDocument(
