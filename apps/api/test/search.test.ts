@@ -8,12 +8,14 @@ import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { vectorCandidates, hybridSearch } from '../services/search'
 import { createTestAdapter } from '@phila/search-embeddings'
+import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
 
 describe('search', () => {
   let pool: Pool
   let indexId: number
   const adapter = createTestAdapter(384)
+  const config = mergeConfig({})
 
   beforeAll(async () => {
     await setupSchema()
@@ -27,17 +29,17 @@ describe('search', () => {
       external_id: 'parking',
       title: 'Parking Permits',
       body: 'Apply for a residential parking permit online. The process takes about two weeks.',
-    })
+    }, config)
     await ingestDocument(pool, indexId, adapter, {
       external_id: 'taxes',
       title: 'Property Taxes',
       body: 'Pay your property taxes online or by mail. Deadlines are quarterly.',
-    })
+    }, config)
     await ingestDocument(pool, indexId, adapter, {
       external_id: 'parks',
       title: 'City Parks',
       body: 'Visit one of Philadelphia many city parks. Free admission to all parks.',
-    })
+    }, config)
 
     // Refresh so BM25F has IDF data
     await refreshIndex(pool, indexId)
@@ -81,7 +83,7 @@ describe('search', () => {
         external_id: 'multi-segment',
         title: 'Parking Info',
         body: longBody,
-      }, { max_segment_tokens: 15 })
+      }, config, { max_segment_tokens: 15 })
       await refreshIndex(pool, indexId)
 
       const results = await hybridSearch(pool, indexId, adapter, 'parking', { limit: 10 })
@@ -163,7 +165,7 @@ describe('search', () => {
         external_id: 'multi-cap',
         title: 'Parking Info Detailed',
         body: longBody,
-      }, { max_segment_tokens: 15 })
+      }, config, { max_segment_tokens: 15 })
       await refreshIndex(pool, indexId)
     })
 

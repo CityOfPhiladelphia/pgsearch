@@ -8,6 +8,7 @@ import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { hybridSearch } from '../services/search'
 import { createBedrockAdapter } from '@phila/search-embeddings'
+import { mergeConfig } from '../config'
 import {
   pipeline,
   extractMeta,
@@ -54,6 +55,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
   let indexId: number
   let indexKey: string
   let searchKey: string
+  const config = mergeConfig({})
 
   beforeAll(async () => {
     pool = await getTestPool()
@@ -131,7 +133,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
         title: parsed.title,
         body: parsed.body,
         metadata: { ...parsed.metadata, source_url: url },
-      })
+      }, config)
 
       expect(result.status).toBe('indexed')
       expect(result.segments).toBeGreaterThan(0)

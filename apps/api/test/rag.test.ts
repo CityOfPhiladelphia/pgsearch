@@ -13,6 +13,7 @@ import { runRag } from '../services/rag'
 import { ragRoutes } from '../routes/rag'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { createTestLlmAdapter } from '@phila/llm'
+import { mergeConfig } from '../config'
 import type { PromptContent } from '../types'
 
 const promptContent: PromptContent = {
@@ -28,6 +29,7 @@ describe('runRag', () => {
   let pool: Pool
   let indexId: number
   const embedAdapter = createTestAdapter(384)
+  const config = mergeConfig({})
 
   beforeAll(async () => { await setupSchema(); pool = await getTestPool() })
   afterAll(async () => { await teardownSchema(); await closePool() })
@@ -47,13 +49,13 @@ describe('runRag', () => {
       title: 'Apply for a Parking Permit',
       body: 'You can apply for a parking permit online or in person at the Streets Department.',
       metadata: { source_url: 'https://phila.gov/parking/apply' },
-    })
+    }, config)
     await ingestDocument(pool, indexId, embedAdapter, {
       external_id: 'parking-veterans',
       title: 'Veterans Parking Benefits',
       body: 'Veterans qualify for a reduced fee on residential parking permits.',
       metadata: { source_url: 'https://phila.gov/parking/veterans' },
-    })
+    }, config)
 
     // Refresh so BM25F has IDF data and avg field lengths are set
     await refreshIndex(pool, indexId)
@@ -159,7 +161,7 @@ describe('runRag', () => {
       title: 'Parking — extended',
       body: multiChunkBody,
       metadata: { source_url: 'https://phila.gov/parking/long' },
-    }, { max_segment_tokens: 15 })
+    }, config, { max_segment_tokens: 15 })
 
     const llm = createTestLlmAdapter({ withCitations: [1] })
     const multiChunkPrompt = { ...promptContent, retrieval: { ...promptContent.retrieval, limit: 10, max_chunks_per_doc: 3 } }

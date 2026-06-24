@@ -6,7 +6,6 @@ import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
 import { chunkText, countTokens } from './chunk'
-import { mergeConfig } from '../config'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -22,22 +21,9 @@ export async function ingestDocument(
   indexId: number,
   adapter: EmbeddingAdapter,
   request: IngestRequest,
+  config: IndexConfig,
   configOverrides?: IngestConfigOverrides,
 ): Promise<IngestResponse> {
-  if (!request.external_id || !request.title || !request.body) {
-    throw new Error('external_id, title, and body are required')
-  }
-
-  // Get index config and merge overrides
-  const indexRow = await pool.query('SELECT config FROM search_indexes WHERE index_id = $1', [indexId])
-  if (indexRow.rows.length === 0) {
-    throw new Error(`Index ${indexId} not found`)
-  }
-  const rawConfig = typeof indexRow.rows[0].config === 'string'
-    ? JSON.parse(indexRow.rows[0].config)
-    : indexRow.rows[0].config
-  const config: IndexConfig = mergeConfig(rawConfig)
-
   const maxSegmentTokens = configOverrides?.max_segment_tokens ?? config.max_segment_tokens
   const maxSegmentsPerDoc = configOverrides?.max_segments_per_document ?? config.max_segments_per_document
 
