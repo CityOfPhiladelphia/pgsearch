@@ -51,9 +51,6 @@ export async function ingestDocument(
     )
   }
 
-  // Hash each segment
-  const segmentHashes = segments.map(hashContent)
-
   // Diff against existing document
   const existingDoc = await pool.query(
     'SELECT document_id FROM search_documents WHERE index_id = $1 AND external_id = $2',
@@ -71,25 +68,26 @@ export async function ingestDocument(
     }
   }
 
-  // Identify changed vs unchanged segments
-  const changedIndices: number[] = []
-  const unchangedIndices: number[] = []
-  for (let i = 0; i < segments.length; i++) {
-    if (existingHashes.has(segmentHashes[i])) {
-      unchangedIndices.push(i)
-    } else {
-      changedIndices.push(i)
-    }
-  }
+  // Partition new segments by content hash so the hash travels with its index.
+  // Segments with identical content collapse to one entry: the store dedupes on
+  // content_hash, trading exact BM25 term-frequency fidelity for an idempotent,
+  // simpler store. Acceptable for search; revisit if duplicate chunks must count distinctly.
+  const changed = new Map<string, number>()    // content_hash -> segment index (needs embedding)
+  const unchanged = new Map<string, number>()  // content_hash -> segment index (already stored)
+  segments.forEach((segment, i) => {
+    const hash = hashContent(segment)
+    if (changed.has(hash) || unchanged.has(hash)) return
+    ;(existingHashes.has(hash) ? unchanged : changed).set(hash, i)
+  })
 
-  // Compute hashes to remove (in old but not in new)
-  const newHashSet = new Set(segmentHashes)
-  const removedHashes = [...existingHashes].filter(h => !newHashSet.has(h))
+  const removedHashes = [...existingHashes].filter(h => !changed.has(h) && !unchanged.has(h))
+  const storedSegmentCount = changed.size + unchanged.size
 
   // Embed only changed segments (prepend title for context)
+  const changedEntries = [...changed]  // [content_hash, segment index][]
   let embeddings: number[][] = []
-  if (changedIndices.length > 0) {
-    const textsToEmbed = changedIndices.map(i => `${request.title}\n\n${segments[i]}`)
+  if (changedEntries.length > 0) {
+    const textsToEmbed = changedEntries.map(([, i]) => `${request.title}\n\n${segments[i]}`)
     embeddings = await adapter.embed(textsToEmbed)
   }
 
@@ -120,7 +118,7 @@ export async function ingestDocument(
         request.title,
         countTokens(request.title),
         JSON.stringify(request.metadata || {}),
-        segments.length,
+        storedSegmentCount,
       ]
     )
 
@@ -136,36 +134,34 @@ export async function ingestDocument(
     }
 
     // Update segment_index for unchanged segments (position may have changed)
-    for (const i of unchangedIndices) {
+    for (const [hash, i] of unchanged) {
       await client.query(
         'UPDATE search_segments SET segment_index = $1 WHERE document_id = $2 AND content_hash = $3',
-        [i, documentId, segmentHashes[i]]
+        [i, documentId, hash]
       )
     }
 
     // Insert segments with new content
-    if (changedIndices.length > 0) {
-      for (let j = 0; j < changedIndices.length; j++) {
-        const i = changedIndices[j]
-        const embedding = embeddings[j]
-        const segBody = segments[i]
+    for (let j = 0; j < changedEntries.length; j++) {
+      const [hash, i] = changedEntries[j]
+      const embedding = embeddings[j]
+      const segBody = segments[i]
 
-        await client.query(
-          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
-           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
-          [
-            documentId,
-            indexId,
-            i,
-            segBody,
-            segmentHashes[i],
-            JSON.stringify(embedding),
-            textSearchConfig,
-            segBody,
-            countTokens(segBody),
-          ]
-        )
-      }
+      await client.query(
+        `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
+         VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+        [
+          documentId,
+          indexId,
+          i,
+          segBody,
+          hash,
+          JSON.stringify(embedding),
+          textSearchConfig,
+          segBody,
+          countTokens(segBody),
+        ]
+      )
     }
 
     // Update index counters
@@ -184,9 +180,9 @@ export async function ingestDocument(
 
     return {
       external_id: request.external_id,
-      segments: segments.length,
-      changed: changedIndices.length,
-      unchanged: unchangedIndices.length,
+      segments: storedSegmentCount,
+      changed: changed.size,
+      unchanged: unchanged.size,
       status: 'indexed',
     }
   } catch (err) {

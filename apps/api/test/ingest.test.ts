@@ -64,6 +64,25 @@ describe('ingest service', () => {
     expect(result.changed).toBeGreaterThan(0)
   })
 
+  it('dedupes identical segments within a document', async () => {
+    const paragraph = Array(55).fill('word').join(' ')
+    const body = `${paragraph}\n\n${paragraph}`
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'dup-seg',
+      title: 'Dup Test',
+      body,
+    }, { max_segment_tokens: 60, max_segments_per_document: 10 })
+
+    const doc = await pool.query(
+      "SELECT document_id, segment_count FROM search_documents WHERE external_id = 'dup-seg' AND index_id = $1", [indexId]
+    )
+    const seg = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM search_segments WHERE document_id = $1', [doc.rows[0].document_id]
+    )
+    expect(seg.rows[0].n).toBe(1)
+    expect(doc.rows[0].segment_count).toBe(1)
+  })
+
   it('rejects documents exceeding segment limit', async () => {
     const longBody = Array(200).fill('A paragraph with several words. Another sentence here.').join('\n\n')
     await expect(
