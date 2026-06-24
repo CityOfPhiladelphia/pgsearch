@@ -25,7 +25,7 @@ ingestRoutes.post('/public/index/:name/documents', withIndex(async ({ pool, inde
   const adapter = getAdapter(index.config)
 
   try {
-    const result = await ingestDocument(pool, index.index_id, adapter, doc)
+    const result = await ingestDocument(pool, index.index_id, adapter, doc, index.config)
     return c.json(result, 200)
   } catch (err: any) {
     if (err.message?.includes('exceeding limit')) return apiError(c, 'VALIDATION_ERROR', err.message)

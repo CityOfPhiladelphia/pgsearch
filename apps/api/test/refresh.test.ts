@@ -7,12 +7,14 @@ import { createIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex, checkAndRefresh } from '../services/refresh'
 import { createTestAdapter } from '@phila/search-embeddings'
+import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
 
 describe('materialized view refresh', () => {
   let pool: Pool
   let indexId: number
   const adapter = createTestAdapter(384)
+  const config = mergeConfig({})
 
   beforeAll(async () => {
     await setupSchema()
@@ -25,7 +27,7 @@ describe('materialized view refresh', () => {
       external_id: 'doc-a',
       title: 'Parking Permits',
       body: 'Apply for a residential parking permit.',
-    })
+    }, config)
   })
   afterAll(async () => { await teardownSchema(); await closePool() })
 

@@ -1,12 +1,13 @@
 // ABOUTME: Document ingest pipeline for pgsearch.
 // ABOUTME: Handles chunking, content hashing, diff-based embedding, tsvector generation, and upsert.
 
+import assert from 'assert'
 import crypto from 'crypto'
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
 import { chunkText, countTokens } from './chunk'
-import { mergeConfig } from '../config'
+import { checkAndRefresh } from './refresh'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -22,22 +23,9 @@ export async function ingestDocument(
   indexId: number,
   adapter: EmbeddingAdapter,
   request: IngestRequest,
+  config: IndexConfig,
   configOverrides?: IngestConfigOverrides,
 ): Promise<IngestResponse> {
-  if (!request.external_id || !request.title || !request.body) {
-    throw new Error('external_id, title, and body are required')
-  }
-
-  // Get index config and merge overrides
-  const indexRow = await pool.query('SELECT config FROM search_indexes WHERE index_id = $1', [indexId])
-  if (indexRow.rows.length === 0) {
-    throw new Error(`Index ${indexId} not found`)
-  }
-  const rawConfig = typeof indexRow.rows[0].config === 'string'
-    ? JSON.parse(indexRow.rows[0].config)
-    : indexRow.rows[0].config
-  const config: IndexConfig = mergeConfig(rawConfig)
-
   const maxSegmentTokens = configOverrides?.max_segment_tokens ?? config.max_segment_tokens
   const maxSegmentsPerDoc = configOverrides?.max_segments_per_document ?? config.max_segments_per_document
 
@@ -45,14 +33,10 @@ export async function ingestDocument(
   const segments = chunkText(request.body, { maxTokens: maxSegmentTokens, minTokens: 50 })
 
   // Guardrail: reject if too many segments
-  if (segments.length > maxSegmentsPerDoc) {
-    throw new Error(
-      `Document produces ${segments.length} segments, exceeding limit of ${maxSegmentsPerDoc}`
-    )
-  }
-
-  // Hash each segment
-  const segmentHashes = segments.map(hashContent)
+  assert(
+    segments.length <= maxSegmentsPerDoc,
+    `Document produces ${segments.length} segments, exceeding limit of ${maxSegmentsPerDoc}`
+  )
 
   // Diff against existing document
   const existingDoc = await pool.query(
@@ -71,31 +55,33 @@ export async function ingestDocument(
     }
   }
 
-  // Identify changed vs unchanged segments
-  const changedIndices: number[] = []
-  const unchangedIndices: number[] = []
-  for (let i = 0; i < segments.length; i++) {
-    if (existingHashes.has(segmentHashes[i])) {
-      unchangedIndices.push(i)
-    } else {
-      changedIndices.push(i)
-    }
-  }
+  // Partition new segments by content hash so the hash travels with its index.
+  // Segments with identical content collapse to one entry: the store dedupes on
+  // content_hash, trading exact BM25 term-frequency fidelity for an idempotent,
+  // simpler store. Acceptable for search; revisit if duplicate chunks must count distinctly.
+  const changed = new Map<string, number>()    // content_hash -> segment index (needs embedding)
+  const unchanged = new Map<string, number>()  // content_hash -> segment index (already stored)
+  segments.forEach((segment, i) => {
+    const hash = hashContent(segment)
+    if (changed.has(hash) || unchanged.has(hash)) return
+    ;(existingHashes.has(hash) ? unchanged : changed).set(hash, i)
+  })
 
-  // Compute hashes to remove (in old but not in new)
-  const newHashSet = new Set(segmentHashes)
-  const removedHashes = [...existingHashes].filter(h => !newHashSet.has(h))
+  const removedHashes = [...existingHashes].filter(h => !changed.has(h) && !unchanged.has(h))
+  const storedSegmentCount = changed.size + unchanged.size
 
   // Embed only changed segments (prepend title for context)
+  const changedEntries = [...changed]  // [content_hash, segment index][]
   let embeddings: number[][] = []
-  if (changedIndices.length > 0) {
-    const textsToEmbed = changedIndices.map(i => `${request.title}\n\n${segments[i]}`)
+  if (changedEntries.length > 0) {
+    const textsToEmbed = changedEntries.map(([, i]) => `${request.title}\n\n${segments[i]}`)
     embeddings = await adapter.embed(textsToEmbed)
   }
 
   const textSearchConfig = config.text_search_config || 'english'
 
   // Execute everything in a transaction
+  let response: IngestResponse
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -120,7 +106,7 @@ export async function ingestDocument(
         request.title,
         countTokens(request.title),
         JSON.stringify(request.metadata || {}),
-        segments.length,
+        storedSegmentCount,
       ]
     )
 
@@ -136,36 +122,34 @@ export async function ingestDocument(
     }
 
     // Update segment_index for unchanged segments (position may have changed)
-    for (const i of unchangedIndices) {
+    for (const [hash, i] of unchanged) {
       await client.query(
         'UPDATE search_segments SET segment_index = $1 WHERE document_id = $2 AND content_hash = $3',
-        [i, documentId, segmentHashes[i]]
+        [i, documentId, hash]
       )
     }
 
     // Insert segments with new content
-    if (changedIndices.length > 0) {
-      for (let j = 0; j < changedIndices.length; j++) {
-        const i = changedIndices[j]
-        const embedding = embeddings[j]
-        const segBody = segments[i]
+    for (let j = 0; j < changedEntries.length; j++) {
+      const [hash, i] = changedEntries[j]
+      const embedding = embeddings[j]
+      const segBody = segments[i]
 
-        await client.query(
-          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
-           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
-          [
-            documentId,
-            indexId,
-            i,
-            segBody,
-            segmentHashes[i],
-            JSON.stringify(embedding),
-            textSearchConfig,
-            segBody,
-            countTokens(segBody),
-          ]
-        )
-      }
+      await client.query(
+        `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
+         VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+        [
+          documentId,
+          indexId,
+          i,
+          segBody,
+          hash,
+          JSON.stringify(embedding),
+          textSearchConfig,
+          segBody,
+          countTokens(segBody),
+        ]
+      )
     }
 
     // Update index counters
@@ -182,11 +166,11 @@ export async function ingestDocument(
 
     await client.query('COMMIT')
 
-    return {
+    response = {
       external_id: request.external_id,
-      segments: segments.length,
-      changed: changedIndices.length,
-      unchanged: unchangedIndices.length,
+      segments: storedSegmentCount,
+      changed: changed.size,
+      unchanged: unchanged.size,
       status: 'indexed',
     }
   } catch (err) {
@@ -195,6 +179,13 @@ export async function ingestDocument(
   } finally {
     client.release()
   }
+
+  // Auto-refresh once enough documents have changed. Runs after the transaction
+  // commits and the client is released, since REFRESH MATERIALIZED VIEW cannot run
+  // inside a transaction block.
+  await checkAndRefresh(pool, indexId, config.refresh_threshold)
+
+  return response
 }
 
 export async function deleteDocument(

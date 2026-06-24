@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from
 import { Hono } from 'hono'
 import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
-import { createIndex, mintKey } from '../services/indexes'
+import { createIndex, mintKey, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
 import { refreshIndex } from '../services/refresh'
 import { createPrompt } from '../services/prompts'
@@ -13,6 +13,7 @@ import { runRag } from '../services/rag'
 import { ragRoutes } from '../routes/rag'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { createTestLlmAdapter } from '@phila/llm'
+import { mergeConfig } from '../config'
 import type { PromptContent } from '../types'
 
 const promptContent: PromptContent = {
@@ -28,6 +29,11 @@ describe('runRag', () => {
   let pool: Pool
   let indexId: number
   const embedAdapter = createTestAdapter(384)
+  const config = mergeConfig({})
+
+  // Fetch a fresh index per call, mirroring how the route resolves it from auth.
+  const rag = async (llmAdapter: Parameters<typeof runRag>[3], input: Parameters<typeof runRag>[4]) =>
+    runRag(pool, (await getIndex(pool, 'rag-idx'))!, embedAdapter, llmAdapter, input)
 
   beforeAll(async () => { await setupSchema(); pool = await getTestPool() })
   afterAll(async () => { await teardownSchema(); await closePool() })
@@ -47,13 +53,13 @@ describe('runRag', () => {
       title: 'Apply for a Parking Permit',
       body: 'You can apply for a parking permit online or in person at the Streets Department.',
       metadata: { source_url: 'https://phila.gov/parking/apply' },
-    })
+    }, config)
     await ingestDocument(pool, indexId, embedAdapter, {
       external_id: 'parking-veterans',
       title: 'Veterans Parking Benefits',
       body: 'Veterans qualify for a reduced fee on residential parking permits.',
       metadata: { source_url: 'https://phila.gov/parking/veterans' },
-    })
+    }, config)
 
     // Refresh so BM25F has IDF data and avg field lengths are set
     await refreshIndex(pool, indexId)
@@ -63,7 +69,7 @@ describe('runRag', () => {
 
   it('returns answer, citations, retrieved, model, usage, prompt name', async () => {
     const llm = createTestLlmAdapter({ withCitations: [1, 2] })
-    const result = await runRag(pool, indexId, embedAdapter, llm, {
+    const result = await rag(llm, {
       promptName: 'navigator',
       promptContent,
       question: 'parking',
@@ -83,7 +89,7 @@ describe('runRag', () => {
 
   it('marks cited chunks as used=true and uncited as used=false', async () => {
     const llm = createTestLlmAdapter({ withCitations: [1] })
-    const result = await runRag(pool, indexId, embedAdapter, llm, {
+    const result = await rag(llm, {
       promptName: 'navigator',
       promptContent,
       question: 'parking',
@@ -98,7 +104,7 @@ describe('runRag', () => {
     // Use an explicit response text (not the echo default) so this test exercises
     // citation parsing in isolation from the test adapter's echo behavior.
     const llm = createTestLlmAdapter({ responseText: 'see [99]' })
-    const result = await runRag(pool, indexId, embedAdapter, llm, {
+    const result = await rag(llm, {
       promptName: 'navigator',
       promptContent,
       question: 'parking',
@@ -115,7 +121,7 @@ describe('runRag', () => {
         return { text: 'ok', usage: { input_tokens: 0, output_tokens: 0 }, model: 'test' }
       },
     }
-    await runRag(pool, indexId, embedAdapter, llm as any, {
+    await rag(llm as any, {
       promptName: 'navigator',
       promptContent,
       question: 'follow-up',
@@ -142,7 +148,7 @@ describe('runRag', () => {
         return { text: 'ok', usage: { input_tokens: 0, output_tokens: 0 }, model: 'test' }
       },
     }
-    await runRag(pool, indexId, embedAdapter, llm as any, {
+    await rag(llm as any, {
       promptName: 'navigator',
       promptContent,
       question: 'q',
@@ -159,11 +165,11 @@ describe('runRag', () => {
       title: 'Parking — extended',
       body: multiChunkBody,
       metadata: { source_url: 'https://phila.gov/parking/long' },
-    }, { max_segment_tokens: 15 })
+    }, config, { max_segment_tokens: 15 })
 
     const llm = createTestLlmAdapter({ withCitations: [1] })
     const multiChunkPrompt = { ...promptContent, retrieval: { ...promptContent.retrieval, limit: 10, max_chunks_per_doc: 3 } }
-    const result = await runRag(pool, indexId, embedAdapter, llm, {
+    const result = await rag(llm, {
       promptName: 'navigator',
       promptContent: multiChunkPrompt,
       question: 'parking',
