@@ -111,6 +111,23 @@ describe('listDocumentState service', () => {
     const page = await listDocumentState(pool, indexId, { limit: 10 })
     expect(page.documents.map(d => d.external_id)).toEqual(['mine'])
   })
+
+  it('returns an empty page with null cursor when limit is 0', async () => {
+    for (const id of ['a', 'b']) await seedDoc(pool, indexId, id)
+    const page = await listDocumentState(pool, indexId, { limit: 0 })
+    expect(page.documents).toEqual([])
+    expect(page.next_cursor).toBeNull()
+  })
+
+  it('coerces null metadata to an empty object', async () => {
+    await pool.query(
+      `INSERT INTO search_documents (index_id, external_id, title, metadata)
+       VALUES ($1, $2, $3, NULL)`,
+      [indexId, 'no-meta', 'No metadata doc'],
+    )
+    const page = await listDocumentState(pool, indexId, { limit: 10 })
+    expect(page.documents[0].metadata).toEqual({})
+  })
 })
 
 describe('clampLimit', () => {

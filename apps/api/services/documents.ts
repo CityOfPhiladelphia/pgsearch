@@ -38,10 +38,10 @@ export async function listDocumentState(
   const documents: DocumentState[] = result.rows.map(row => ({
     external_id: row.external_id,
     updated_at: row.updated_at.toISOString(),
-    metadata: row.metadata,
+    metadata: row.metadata ?? {},
   }))
 
-  const next_cursor = documents.length === limit
+  const next_cursor = documents.length > 0 && documents.length === limit
     ? documents[documents.length - 1].external_id
     : null
 
