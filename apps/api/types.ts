@@ -80,6 +80,17 @@ export interface IngestResponse {
   status: 'indexed'
 }
 
+export interface DocumentState {
+  external_id: string
+  updated_at: string
+  metadata: Record<string, unknown>
+}
+
+export interface DocumentStateResponse {
+  documents: DocumentState[]
+  next_cursor: string | null
+}
+
 export interface SearchResult {
   external_id: string
   score: number
