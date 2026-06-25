@@ -2,10 +2,12 @@
 // ABOUTME: Verifies keyset pagination, ordering, cursor termination, payload shape, and index isolation.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'
+import { Hono } from 'hono'
 import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex } from '../services/indexes'
 import { listDocumentState, clampLimit, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../services/documents'
+import { ingestRoutes } from '../routes/ingest'
 import type { DocumentState } from '../types'
 
 async function makeIndex(pool: Pool, name: string): Promise<number> {
@@ -146,5 +148,82 @@ describe('clampLimit', () => {
   })
   it('passes through an in-range value', () => {
     expect(clampLimit('500')).toBe(500)
+  })
+})
+
+describe('GET /public/index/:name/documents route', () => {
+  let pool: Pool
+  let indexKey: string
+  let indexId: number
+
+  beforeAll(async () => {
+    // The route's getPool() reads env vars and constructs a production pool;
+    // point it at the same test container the rest of the suite uses.
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    pool = await getTestPool()
+  })
+  afterAll(async () => { await teardownSchema(); await closePool() })
+  afterEach(async () => { await cleanupTestData() })
+
+  const app = new Hono()
+  app.route('/', ingestRoutes)
+
+  beforeEach(async () => {
+    const created = await createIndex(pool, { name: 'route-idx' })
+    indexKey = created!.index_key
+    const row = await pool.query('SELECT index_id FROM search_indexes WHERE name = $1', ['route-idx'])
+    indexId = row.rows[0].index_id
+  })
+
+  it('Returns index state for an authenticated request', async () => {
+    for (const id of ['b', 'a', 'c']) await seedDoc(pool, indexId, id, { tag: id })
+
+    const res = await app.request('/public/index/route-idx/documents', {
+      headers: { 'x-index-key': indexKey },
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      documents: { external_id: string; updated_at: string; metadata: Record<string, unknown> }[]
+      next_cursor: string | null
+    }
+    expect(body.documents.map(d => d.external_id)).toEqual(['a', 'b', 'c'])
+    expect(body.next_cursor).toBeNull()
+    for (const doc of body.documents) {
+      expect(typeof doc.updated_at).toBe('string')
+      expect(doc.metadata).toBeTypeOf('object')
+    }
+  })
+
+  it('flows limit + after query params through the route into the keyset walk', async () => {
+    for (const id of ['a', 'b', 'c']) await seedDoc(pool, indexId, id)
+
+    const res1 = await app.request('/public/index/route-idx/documents?limit=1', {
+      headers: { 'x-index-key': indexKey },
+    })
+    expect(res1.status).toBe(200)
+    const body1 = await res1.json() as {
+      documents: { external_id: string }[]
+      next_cursor: string | null
+    }
+    expect(body1.documents.map(d => d.external_id)).toEqual(['a'])
+    expect(body1.next_cursor).toBe('a')
+
+    const res2 = await app.request('/public/index/route-idx/documents?limit=1&after=a', {
+      headers: { 'x-index-key': indexKey },
+    })
+    expect(res2.status).toBe(200)
+    const body2 = await res2.json() as {
+      documents: { external_id: string }[]
+      next_cursor: string | null
+    }
+    expect(body2.documents.map(d => d.external_id)).toEqual(['b'])
+    expect(body2.next_cursor).toBe('b')
   })
 })
