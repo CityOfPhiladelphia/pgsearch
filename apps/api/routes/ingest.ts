@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { ingestDocument, deleteDocument } from '../services/ingest'
+import { listDocumentState, clampLimit } from '../services/documents'
 import { apiError } from '../middleware/error'
 import { parseBody, type Schema } from '../middleware/validate'
 import { getAdapter } from '../services/adapter'
@@ -37,4 +38,11 @@ ingestRoutes.delete('/public/index/:name/documents/:external_id', withIndex(asyn
   const externalId = c.req.param('external_id')!
   await deleteDocument(pool, index.index_id, externalId)
   return c.json({ deleted: true })
+}))
+
+ingestRoutes.get('/public/index/:name/documents', withIndex(async ({ pool, index }, c) => {
+  const limit = clampLimit(c.req.query('limit'))
+  const after = c.req.query('after') || undefined
+  const result = await listDocumentState(pool, index.index_id, { limit, after })
+  return c.json(result, 200)
 }))

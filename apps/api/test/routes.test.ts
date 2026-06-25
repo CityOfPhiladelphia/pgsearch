@@ -37,6 +37,14 @@ describe('ingest route wiring', () => {
     expect(res.status).toBe(401)
   })
 
+  it('mounts GET /public/index/:name/documents behind indexAuth', async () => {
+    const res = await app.request('/public/index/any-index/documents')
+    // indexAuth short-circuits on missing x-index-key → 401, proving the route is mounted.
+    expect(res.status).toBe(401)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
   it('does not expose /index/:name/documents outside /public/*', async () => {
     const res = await app.request('/index/any-index/documents', {
       method: 'POST',
