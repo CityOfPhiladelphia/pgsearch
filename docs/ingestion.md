@@ -57,6 +57,39 @@ DELETE /public/index/:name/documents/:external_id
 Header: x-index-key: <index_key>
 ```
 
+### Export Index State
+
+```
+GET /public/index/:name/documents
+Header: x-index-key: <index_key>
+```
+
+Query parameters:
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `limit` | No | Page size. Default 1000, max 5000. Out-of-range values are clamped, not rejected. |
+| `after` | No | Exclusive cursor. Returns documents with `external_id > after`. Omit on the first page; pass the previous response's `next_cursor` on subsequent pages. |
+
+Response:
+
+```json
+{
+  "documents": [
+    {
+      "external_id": "page-001",
+      "updated_at": "2026-04-10T12:00:00.000Z",
+      "metadata": {"source_url": "https://example.com/parking"}
+    }
+  ],
+  "next_cursor": "page-001"
+}
+```
+
+`next_cursor` is the last document's `external_id` when the page is full, and `null` when there are no more pages.
+
+Documents are returned in ascending `external_id` order. To export the full index, page until `next_cursor` is `null`. Once you have the complete list, delete the `external_id`s that exist in the index but not in your upstream source, and re-ingest documents whose content has changed — using `updated_at` or a fingerprint you stored in `metadata` (for example, an S3 ETag) to identify which ones to re-POST.
+
 ## Segmentation
 
 Body text is split into segments for embedding. The chunker:

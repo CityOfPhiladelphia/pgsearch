@@ -26,6 +26,10 @@ export async function listDocumentState(
   options: { limit: number; after?: string },
 ): Promise<DocumentStateResponse> {
   const { limit, after } = options
+  // ($2::text IS NULL OR external_id > $2) folds to a sargable btree bound on (index_id,
+  // external_id), keeping deep pages O(log n). This requires per-execution (unnamed prepared
+  // statement) planning, which pool.query() provides — a named/generic prepared plan cannot
+  // fold the IS NULL branch and would degrade the cursor bound to a filter.
   const result = await pool.query(
     `SELECT external_id, updated_at, metadata
      FROM search_documents
