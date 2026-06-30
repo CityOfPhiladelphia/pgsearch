@@ -214,15 +214,42 @@ export async function deleteDocument(
   indexId: number,
   externalId: string,
 ): Promise<void> {
-  const result = await pool.query(
-    'DELETE FROM search_documents WHERE index_id = $1 AND external_id = $2 RETURNING document_id',
-    [indexId, externalId]
-  )
-
-  if (result.rows.length > 0) {
-    await pool.query(
-      'UPDATE search_indexes SET total_documents = total_documents - 1, docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
-      [indexId]
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const found = await client.query(
+      'SELECT document_id FROM search_documents WHERE index_id = $1 AND external_id = $2',
+      [indexId, externalId],
     )
+    if (found.rows.length === 0) { await client.query('COMMIT'); return }
+    const documentId = found.rows[0].document_id
+
+    const oldTerms = await documentTermSet(client, documentId)
+    const oldStats = await documentStats(client, documentId)
+
+    await client.query('DELETE FROM search_documents WHERE document_id = $1', [documentId]) // segments cascade
+
+    await client.query(
+      `UPDATE search_indexes
+       SET total_documents = total_documents - 1,
+           docs_changed_since_refresh = docs_changed_since_refresh + 1
+       WHERE index_id = $1`,
+      [indexId],
+    )
+    await applyMaintenance(client, {
+      indexId,
+      oldTerms,
+      newTerms: [],
+      deltaTitle: -oldStats.titleLength,
+      deltaBody: -oldStats.bodyLength,
+      deltaSegments: -oldStats.segments,
+    })
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
   }
 }

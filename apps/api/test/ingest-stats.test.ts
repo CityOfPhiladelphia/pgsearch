@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, closePool, cleanupTestData } from './setup'
 import { createIndex } from '../services/indexes'
-import { ingestDocument } from '../services/ingest'
+import { ingestDocument, deleteDocument } from '../services/ingest'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
@@ -74,5 +74,15 @@ describe('ingest maintains stats incrementally', () => {
     expect(await df(pool, indexId, 'compost')).toBe(1)  // added by the new title
     expect(await df(pool, indexId, 'park')).toBe(1)      // body term unchanged
     expect(await df(pool, indexId, 'permit')).toBe(1)
+  })
+
+  it('delete decrements DF, removes zeroed terms, and subtracts lengths', async () => {
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Parking', body: 'parking permit garage' }, config)
+    await ingestDocument(pool, indexId, adapter, { external_id: 'b', title: 'Parking', body: 'parking permit' }, config)
+    await deleteDocument(pool, indexId, 'a')
+    expect(await df(pool, indexId, 'park')).toBe(1)    // still in b
+    expect(await df(pool, indexId, 'garag')).toBe(0)   // only in a -> removed
+    const idx = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id=$1', [indexId])
+    expect(idx.rows[0].total_documents).toBe(1)
   })
 })
