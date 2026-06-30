@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, closePool, cleanupTestData } from './setup'
 import { createIndex } from '../services/indexes'
-import { ingestDocument, deleteDocument } from '../services/ingest'
+import { ingestDocument } from '../services/ingest'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
@@ -43,11 +43,36 @@ describe('ingest maintains stats incrementally', () => {
     expect(await df(pool, indexId, 'park')).toBe(2)
   })
 
-  it('re-ingesting with a removed term decrements its DF', async () => {
+  it('re-ingesting with a removed term decrements its DF and shrinks avg body length', async () => {
     await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'X', body: 'parking garage downtown' }, config)
     expect(await df(pool, indexId, 'garag')).toBe(1)
+    const before = await pool.query('SELECT avg_body_length FROM search_indexes WHERE index_id=$1', [indexId])
     await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'X', body: 'parking downtown' }, config)
     expect(await df(pool, indexId, 'garag')).toBe(0)
     expect(await df(pool, indexId, 'park')).toBe(1)
+    const after = await pool.query('SELECT avg_body_length FROM search_indexes WHERE index_id=$1', [indexId])
+    expect(Number(after.rows[0].avg_body_length)).toBeLessThan(Number(before.rows[0].avg_body_length))
+  })
+
+  it('re-ingesting identical content leaves DF and averages unchanged (skip path)', async () => {
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Parking', body: 'parking permit' }, config)
+    const before = await pool.query(
+      'SELECT avg_title_length, avg_body_length, total_documents FROM search_indexes WHERE index_id=$1', [indexId])
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Parking', body: 'parking permit' }, config)
+    expect(await df(pool, indexId, 'park')).toBe(1)
+    expect(await df(pool, indexId, 'permit')).toBe(1)
+    const after = await pool.query(
+      'SELECT avg_title_length, avg_body_length, total_documents FROM search_indexes WHERE index_id=$1', [indexId])
+    expect(after.rows[0]).toEqual(before.rows[0])
+  })
+
+  it('re-ingesting with only the title changed moves title-only terms', async () => {
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Recycling', body: 'parking permit' }, config)
+    expect(await df(pool, indexId, 'recycl')).toBe(1)
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Compost', body: 'parking permit' }, config)
+    expect(await df(pool, indexId, 'recycl')).toBe(0)   // dropped from the title
+    expect(await df(pool, indexId, 'compost')).toBe(1)  // added by the new title
+    expect(await df(pool, indexId, 'park')).toBe(1)      // body term unchanged
+    expect(await df(pool, indexId, 'permit')).toBe(1)
   })
 })
