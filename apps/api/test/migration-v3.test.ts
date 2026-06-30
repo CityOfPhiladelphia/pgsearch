@@ -33,4 +33,24 @@ describe('migration v3', () => {
     expect(r.rows.map(x => x.column_name).sort()).toEqual(
       ['total_body_length', 'total_segments', 'total_title_length'])
   })
+
+  it('the running-sum columns are bigint NOT NULL DEFAULT 0', async () => {
+    const r = await pool.query(`
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_name = 'search_indexes'
+        AND column_name IN ('total_title_length','total_body_length','total_segments')
+      ORDER BY column_name`)
+    for (const row of r.rows) {
+      expect(row.data_type).toBe('bigint')
+      expect(row.is_nullable).toBe('NO')
+      expect(row.column_default).toBe('0')
+    }
+  })
+
+  it('reconcile_index_stats function exists', async () => {
+    const r = await pool.query(
+      "SELECT proname FROM pg_proc WHERE proname = 'reconcile_index_stats'")
+    expect(r.rows).toHaveLength(1)
+  })
 })

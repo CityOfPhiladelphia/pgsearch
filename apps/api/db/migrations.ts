@@ -115,6 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_rag_prompts_index_id ON rag_prompts (index_id);
     description: 'Incremental BM25 stats: matview -> table, running-sum columns, reconcile function',
     sql: `
 -- Convert the term-frequency materialized view to a maintained table.
+DROP TABLE IF EXISTS term_document_frequencies_tbl;
 CREATE TABLE term_document_frequencies_tbl (
   index_id           INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
   term               TEXT NOT NULL,
@@ -123,14 +124,14 @@ CREATE TABLE term_document_frequencies_tbl (
 );
 INSERT INTO term_document_frequencies_tbl (index_id, term, document_frequency)
   SELECT index_id, term, document_frequency FROM term_document_frequencies;
-DROP MATERIALIZED VIEW term_document_frequencies;
+DROP MATERIALIZED VIEW IF EXISTS term_document_frequencies;
 ALTER TABLE term_document_frequencies_tbl RENAME TO term_document_frequencies;
 
 -- Running sums so averages are maintained, not recomputed.
 ALTER TABLE search_indexes
-  ADD COLUMN total_title_length BIGINT NOT NULL DEFAULT 0,
-  ADD COLUMN total_body_length  BIGINT NOT NULL DEFAULT 0,
-  ADD COLUMN total_segments     BIGINT NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS total_title_length BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_body_length  BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_segments     BIGINT NOT NULL DEFAULT 0;
 
 UPDATE search_indexes si SET
   total_title_length = COALESCE((SELECT SUM(title_length)  FROM search_documents d WHERE d.index_id = si.index_id), 0),
@@ -165,10 +166,10 @@ BEGIN
     total_body_length  = COALESCE((SELECT SUM(body_length)   FROM search_segments  s WHERE s.index_id = p_index_id), 0)
   WHERE si.index_id = p_index_id;
 
-  UPDATE search_indexes SET
+  UPDATE search_indexes si SET
     avg_title_length = COALESCE(total_title_length::float / NULLIF(total_documents, 0), 0),
     avg_body_length  = COALESCE(total_body_length::float  / NULLIF(total_segments, 0), 0)
-  WHERE index_id = p_index_id;
+  WHERE si.index_id = p_index_id;
 END;
 $fn$;
 `,
