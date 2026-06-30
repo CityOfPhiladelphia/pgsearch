@@ -21,7 +21,10 @@ export const DEFAULT_CONFIG: IndexConfig = {
   min_vector_score: 0,
   max_segment_tokens: 500,
   max_segments_per_document: 100,
-  refresh_threshold: 100,
+  // BM25 corpus-stat recompute runs inline on ingest; it doesn't need to be
+  // tight. A higher threshold keeps bulk ingests from repeatedly paying the
+  // materialized-view refresh cost.
+  refresh_threshold: 1000,
 }
 
 export function mergeConfig(overrides: Partial<IndexConfig>, base: IndexConfig = DEFAULT_CONFIG): IndexConfig {
