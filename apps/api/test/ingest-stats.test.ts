@@ -85,4 +85,22 @@ describe('ingest maintains stats incrementally', () => {
     const idx = await pool.query('SELECT total_documents FROM search_indexes WHERE index_id=$1', [indexId])
     expect(idx.rows[0].total_documents).toBe(1)
   })
+
+  it('deleting the last document empties stats without a NOT NULL violation', async () => {
+    await ingestDocument(pool, indexId, adapter, { external_id: 'a', title: 'Parking', body: 'parking permit' }, config)
+    await deleteDocument(pool, indexId, 'a')
+    expect(await df(pool, indexId, 'park')).toBe(0)
+    const idx = await pool.query(
+      'SELECT total_documents, total_title_length, total_body_length, total_segments, avg_title_length, avg_body_length FROM search_indexes WHERE index_id=$1', [indexId])
+    expect(idx.rows[0].total_documents).toBe(0)
+    expect(Number(idx.rows[0].total_title_length)).toBe(0)
+    expect(Number(idx.rows[0].total_body_length)).toBe(0)
+    expect(Number(idx.rows[0].total_segments)).toBe(0)
+    expect(Number(idx.rows[0].avg_title_length)).toBe(0)
+    expect(Number(idx.rows[0].avg_body_length)).toBe(0)
+  })
+
+  it('deleting a non-existent document is a harmless no-op', async () => {
+    await expect(deleteDocument(pool, indexId, 'nope')).resolves.toBeUndefined()
+  })
 })
