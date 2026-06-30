@@ -7,7 +7,7 @@ import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
 import { chunkText, countTokens } from './chunk'
-import { checkAndRefresh } from './refresh'
+import { documentTermSet, documentStats, applyMaintenance } from './stats'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -40,15 +40,17 @@ export async function ingestDocument(
 
   // Diff against existing document
   const existingDoc = await pool.query(
-    'SELECT document_id FROM search_documents WHERE index_id = $1 AND external_id = $2',
-    [indexId, request.external_id]
+    'SELECT document_id, title FROM search_documents WHERE index_id = $1 AND external_id = $2',
+    [indexId, request.external_id],
   )
+  const existingDocumentId: string | undefined = existingDoc.rows[0]?.document_id
+  const oldTitle: string | undefined = existingDoc.rows[0]?.title
 
   const existingHashes = new Set<string>()
-  if (existingDoc.rows.length > 0) {
+  if (existingDocumentId) {
     const hashRows = await pool.query(
       'SELECT content_hash FROM search_segments WHERE document_id = $1',
-      [existingDoc.rows[0].document_id]
+      [existingDocumentId]
     )
     for (const row of hashRows.rows) {
       existingHashes.add(row.content_hash)
@@ -85,6 +87,14 @@ export async function ingestDocument(
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+
+    // Capture pre-update state for incremental stat maintenance
+    let oldTerms: string[] = []
+    let oldStats = { titleLength: 0, bodyLength: 0, segments: 0 }
+    if (existingDocumentId) {
+      oldTerms = await documentTermSet(client, existingDocumentId)
+      oldStats = await documentStats(client, existingDocumentId)
+    }
 
     // Upsert document
     const upsertResult = await client.query(
@@ -164,6 +174,22 @@ export async function ingestDocument(
       [indexId]
     )
 
+    // Apply incremental BM25 stat maintenance (DF + length averages)
+    const titleUnchanged = existingDocumentId !== undefined && oldTitle === request.title
+    const segmentsUnchanged = changed.size === 0 && removedHashes.length === 0
+    if (!(titleUnchanged && segmentsUnchanged)) {
+      const newTerms = await documentTermSet(client, documentId)
+      const newStats = await documentStats(client, documentId)
+      await applyMaintenance(client, {
+        indexId,
+        oldTerms,
+        newTerms,
+        deltaTitle: newStats.titleLength - oldStats.titleLength,
+        deltaBody: newStats.bodyLength - oldStats.bodyLength,
+        deltaSegments: newStats.segments - oldStats.segments,
+      })
+    }
+
     await client.query('COMMIT')
 
     response = {
@@ -179,11 +205,6 @@ export async function ingestDocument(
   } finally {
     client.release()
   }
-
-  // Auto-refresh once enough documents have changed. Runs after the transaction
-  // commits and the client is released, since REFRESH MATERIALIZED VIEW cannot run
-  // inside a transaction block.
-  await checkAndRefresh(pool, indexId, config.refresh_threshold)
 
   return response
 }
