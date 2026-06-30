@@ -9,7 +9,7 @@ export async function documentTermSet(client: PoolClient, documentId: string): P
     `SELECT array_agg(DISTINCT term) AS terms FROM (
        SELECT unnest(tsvector_to_array(body_tsvector)) AS term
        FROM search_segments WHERE document_id = $1 AND body_tsvector IS NOT NULL
-       UNION
+       UNION ALL
        SELECT unnest(tsvector_to_array(title_tsvector))
        FROM search_documents WHERE document_id = $1 AND title_tsvector IS NOT NULL
      ) t`,
