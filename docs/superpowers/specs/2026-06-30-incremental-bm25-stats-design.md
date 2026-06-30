@@ -73,10 +73,24 @@ No new logic: the DF table cascades on `index_id`, and the `search_indexes` row 
 
 Surfaces two ways, both thin wrappers over the function:
 
-- **Admin endpoint** `POST /private/key/admin/indexes/:name/reconcile` (replaces the old `/refresh` route) — resolves the name to `index_id` and `SELECT reconcile_index_stats($1)`.
-- **Scheduler**, low frequency (a single job looping indexes, or per-index): **pg_cron** calling the function directly *if it is available on the RDS/Aurora instance* (requires enabling via the parameter group / `shared_preload_libraries` — confirm during planning). **Fallback if pg_cron is not enabled:** an EventBridge schedule → Lambda → the reconcile endpoint, a pattern already present in the CDK (the stack uses an EventBridge `cron(...)` schedule). Either way the reconcile *logic* is the SQL function; only the trigger differs.
+- **Admin endpoint** `POST /private/key/admin/indexes/:name/reconcile` (replaces the old `/refresh` route) — resolves the name to `index_id` and `SELECT reconcile_index_stats($1)`. Note: this runs on the 30 s API Lambda, so it is suitable for small/medium indexes and ad-hoc use, **not** as the path for a large-corpus recompute (that is what pg_cron is for).
+- **Scheduler: pg_cron**, low frequency (a single job looping indexes, or per-index). pg_cron runs the function **in-database with no external timeout**, which is the whole point — the recompute is unbounded and must not run under the 30 s Lambda ceiling. A non-pg_cron path was considered (a dedicated long-timeout reconcile Lambda); the existing 30 s API-endpoint path is explicitly **not** viable for the heavy recompute. The EventBridge alternative was rejected in favor of pg_cron.
 
 This is the only place the O(corpus) recompute runs, and it runs rarely and off the request path.
+
+### Ownership boundary
+
+Reconcile and its scheduler are **pgsearch's**, deployed to the **pgsearch stack** — they maintain pgsearch's own index statistics. They are independent of any particular search client; govsync is just one client (the phila.gov case) and owns none of this. The two services are not assumed to be co-deployed.
+
+### Enabling pg_cron (pgsearch stack infra)
+
+The dev instance is RDS **PostgreSQL 15.17** on the **`default.postgres15`** parameter group (`shared_preload_libraries = pg_stat_statements`). pg_cron is a supported value for this engine but is not loaded, and default parameter groups cannot be modified. Enablement (in the pgsearch CDK):
+
+1. Create a custom DB parameter group (family `postgres15`) with `shared_preload_libraries = pg_stat_statements,pg_cron` (preserve the existing entry; this is a **static** parameter).
+2. Attach it to the instance and **reboot** (required for the static parameter; brief, acceptable on dev).
+3. `CREATE EXTENSION pg_cron;`. pg_cron's job scheduler runs in one database (`cron.database_name`); the reconcile jobs must target the pgsearch application database — use `cron.schedule_in_database(...)` (pg_cron ≥ 1.4) or set `cron.database_name` accordingly. Confirm the exact mechanism during planning.
+
+Whether `LambdaPostgresApi` exposes parameter-group customization, or whether it needs a CDK escape hatch (as the WAF override already uses), is a planning detail.
 
 ## Removed
 
@@ -102,7 +116,7 @@ v3 does **not** drop `docs_changed_since_refresh` (see Deploy ordering); that dr
 
 ## Live `phila-gov`
 
-It currently has stale stats (inline refresh was disabled and `refresh_threshold` set to 100M to get the bulk load through). Post-deploy, run `reconcile_index_stats` once to correct DF + averages. Incremental maintenance keeps it correct thereafter; pg_cron reconcile is the backstop.
+It currently has stale stats (inline refresh was disabled and `refresh_threshold` set to 100M to get the bulk load through). Post-deploy, run `reconcile_index_stats(phila-gov)` once to correct DF + averages. Because its ~15k-doc recompute exceeds 30 s, this one-time run must go **in-DB** (a manual pg_cron job or direct `SELECT` once the extension is enabled), not the API endpoint. Incremental maintenance keeps it correct thereafter; scheduled pg_cron reconcile is the backstop.
 
 ## Testing
 
