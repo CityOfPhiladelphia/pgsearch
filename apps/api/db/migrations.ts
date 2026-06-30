@@ -110,4 +110,67 @@ CREATE TABLE IF NOT EXISTS rag_prompts (
 CREATE INDEX IF NOT EXISTS idx_rag_prompts_index_id ON rag_prompts (index_id);
     `,
   },
+  {
+    version: 3,
+    description: 'Incremental BM25 stats: matview -> table, running-sum columns, reconcile function',
+    sql: `
+-- Convert the term-frequency materialized view to a maintained table.
+CREATE TABLE term_document_frequencies_tbl (
+  index_id           INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
+  term               TEXT NOT NULL,
+  document_frequency INTEGER NOT NULL,
+  PRIMARY KEY (index_id, term)
+);
+INSERT INTO term_document_frequencies_tbl (index_id, term, document_frequency)
+  SELECT index_id, term, document_frequency FROM term_document_frequencies;
+DROP MATERIALIZED VIEW term_document_frequencies;
+ALTER TABLE term_document_frequencies_tbl RENAME TO term_document_frequencies;
+
+-- Running sums so averages are maintained, not recomputed.
+ALTER TABLE search_indexes
+  ADD COLUMN total_title_length BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN total_body_length  BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN total_segments     BIGINT NOT NULL DEFAULT 0;
+
+UPDATE search_indexes si SET
+  total_title_length = COALESCE((SELECT SUM(title_length)  FROM search_documents d WHERE d.index_id = si.index_id), 0),
+  total_segments     = COALESCE((SELECT SUM(segment_count) FROM search_documents d WHERE d.index_id = si.index_id), 0),
+  total_body_length  = COALESCE((SELECT SUM(body_length)   FROM search_segments  s WHERE s.index_id = si.index_id), 0);
+
+UPDATE search_indexes SET
+  avg_title_length = COALESCE(total_title_length::float / NULLIF(total_documents, 0), 0),
+  avg_body_length  = COALESCE(total_body_length::float  / NULLIF(total_segments, 0), 0);
+
+-- Cold-path reconcile: recompute DF + sums + averages from source for one index.
+CREATE OR REPLACE FUNCTION reconcile_index_stats(p_index_id INTEGER)
+RETURNS void LANGUAGE plpgsql AS $fn$
+BEGIN
+  DELETE FROM term_document_frequencies WHERE index_id = p_index_id;
+  INSERT INTO term_document_frequencies (index_id, term, document_frequency)
+  SELECT p_index_id, sub.term, COUNT(DISTINCT sub.document_id)::int
+  FROM (
+    SELECT d.document_id, unnest(tsvector_to_array(s.body_tsvector)) AS term
+    FROM search_documents d JOIN search_segments s ON s.document_id = d.document_id
+    WHERE d.index_id = p_index_id AND s.body_tsvector IS NOT NULL
+    UNION
+    SELECT d.document_id, unnest(tsvector_to_array(d.title_tsvector))
+    FROM search_documents d
+    WHERE d.index_id = p_index_id AND d.title_tsvector IS NOT NULL
+  ) sub
+  GROUP BY sub.term;
+
+  UPDATE search_indexes si SET
+    total_title_length = COALESCE((SELECT SUM(title_length)  FROM search_documents d WHERE d.index_id = p_index_id), 0),
+    total_segments     = COALESCE((SELECT SUM(segment_count) FROM search_documents d WHERE d.index_id = p_index_id), 0),
+    total_body_length  = COALESCE((SELECT SUM(body_length)   FROM search_segments  s WHERE s.index_id = p_index_id), 0)
+  WHERE si.index_id = p_index_id;
+
+  UPDATE search_indexes SET
+    avg_title_length = COALESCE(total_title_length::float / NULLIF(total_documents, 0), 0),
+    avg_body_length  = COALESCE(total_body_length::float  / NULLIF(total_segments, 0), 0)
+  WHERE index_id = p_index_id;
+END;
+$fn$;
+`,
+  },
 ]

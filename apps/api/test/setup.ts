@@ -29,6 +29,7 @@ export async function setupSchema(): Promise<void> {
 
 export async function teardownSchema(): Promise<void> {
   const p = await getTestPool()
+  await p.query('DROP TABLE IF EXISTS term_document_frequencies CASCADE')
   await p.query('DROP MATERIALIZED VIEW IF EXISTS term_document_frequencies CASCADE')
   await p.query('DROP TABLE IF EXISTS search_segments CASCADE')
   await p.query('DROP TABLE IF EXISTS search_documents CASCADE')
