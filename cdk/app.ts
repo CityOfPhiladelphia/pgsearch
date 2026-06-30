@@ -72,6 +72,11 @@ webAcl.addPropertyOverride(
   [{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }],
 );
 
+// The WAF RateLimitRule (priority 2) defaults to 1000 requests / 5 min per IP.
+// Bulk document ingest — the govsync sync upserts thousands of docs in a single
+// reconcile — exceeds that and gets 403'd. Raise the limit to accommodate it.
+webAcl.addPropertyOverride('Rules.1.Statement.RateBasedStatement.Limit', 10000);
+
 // Allow the Lambda to call Bedrock: Titan Embed v2 for per-index embeddings
 // and Claude Haiku 4.5 via the US inference profile for RAG synthesis.
 // Inference profiles require both the profile ARN and InvokeModel on the
