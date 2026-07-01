@@ -14,6 +14,17 @@ interface IngestConfigOverrides {
   max_segment_tokens?: number
 }
 
+export async function withDeadlockRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 0; ; i++) {
+    try { return await fn() }
+    catch (err: any) {
+      // 40P01 deadlock_detected, 40001 serialization_failure
+      if ((err?.code === '40P01' || err?.code === '40001') && i < attempts - 1) continue
+      throw err
+    }
+  }
+}
+
 function hashContent(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex')
 }
@@ -82,130 +93,130 @@ export async function ingestDocument(
 
   const textSearchConfig = config.text_search_config || 'english'
 
-  // Execute everything in a transaction
-  let response: IngestResponse
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
+  // Execute everything in a transaction (retried on transient deadlock/serialization errors)
+  const response = await withDeadlockRetry(async () => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    // Capture pre-update state for incremental stat maintenance
-    let oldTerms: string[] = []
-    let oldStats = { titleLength: 0, bodyLength: 0, segments: 0 }
-    if (existingDocumentId) {
-      oldTerms = await documentTermSet(client, existingDocumentId)
-      oldStats = await documentStats(client, existingDocumentId)
-    }
+      // Capture pre-update state for incremental stat maintenance
+      let oldTerms: string[] = []
+      let oldStats = { titleLength: 0, bodyLength: 0, segments: 0 }
+      if (existingDocumentId) {
+        oldTerms = await documentTermSet(client, existingDocumentId)
+        oldStats = await documentStats(client, existingDocumentId)
+      }
 
-    // Upsert document
-    const upsertResult = await client.query(
-      `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count)
-       VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8)
-       ON CONFLICT (index_id, external_id) DO UPDATE SET
-         title = $3,
-         title_tsvector = to_tsvector($4, $5),
-         title_length = $6,
-         metadata = $7,
-         segment_count = $8,
-         updated_at = NOW()
-       RETURNING document_id, (xmax = 0) AS is_insert`,
-      [
-        indexId,
-        request.external_id,
-        request.title,
-        textSearchConfig,
-        request.title,
-        countTokens(request.title),
-        JSON.stringify(request.metadata || {}),
-        storedSegmentCount,
-      ]
-    )
-
-    const documentId = upsertResult.rows[0].document_id
-    const isInsert = upsertResult.rows[0].is_insert
-
-    // Delete removed segments
-    if (removedHashes.length > 0) {
-      await client.query(
-        'DELETE FROM search_segments WHERE document_id = $1 AND content_hash = ANY($2)',
-        [documentId, removedHashes]
-      )
-    }
-
-    // Update segment_index for unchanged segments (position may have changed)
-    for (const [hash, i] of unchanged) {
-      await client.query(
-        'UPDATE search_segments SET segment_index = $1 WHERE document_id = $2 AND content_hash = $3',
-        [i, documentId, hash]
-      )
-    }
-
-    // Insert segments with new content
-    for (let j = 0; j < changedEntries.length; j++) {
-      const [hash, i] = changedEntries[j]
-      const embedding = embeddings[j]
-      const segBody = segments[i]
-
-      await client.query(
-        `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
-         VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+      // Upsert document
+      const upsertResult = await client.query(
+        `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count)
+         VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8)
+         ON CONFLICT (index_id, external_id) DO UPDATE SET
+           title = $3,
+           title_tsvector = to_tsvector($4, $5),
+           title_length = $6,
+           metadata = $7,
+           segment_count = $8,
+           updated_at = NOW()
+         RETURNING document_id, (xmax = 0) AS is_insert`,
         [
-          documentId,
           indexId,
-          i,
-          segBody,
-          hash,
-          JSON.stringify(embedding),
+          request.external_id,
+          request.title,
           textSearchConfig,
-          segBody,
-          countTokens(segBody),
+          request.title,
+          countTokens(request.title),
+          JSON.stringify(request.metadata || {}),
+          storedSegmentCount,
         ]
       )
-    }
 
-    // Update index counters
-    if (isInsert) {
+      const documentId = upsertResult.rows[0].document_id
+      const isInsert = upsertResult.rows[0].is_insert
+
+      // Delete removed segments
+      if (removedHashes.length > 0) {
+        await client.query(
+          'DELETE FROM search_segments WHERE document_id = $1 AND content_hash = ANY($2)',
+          [documentId, removedHashes]
+        )
+      }
+
+      // Update segment_index for unchanged segments (position may have changed)
+      for (const [hash, i] of unchanged) {
+        await client.query(
+          'UPDATE search_segments SET segment_index = $1 WHERE document_id = $2 AND content_hash = $3',
+          [i, documentId, hash]
+        )
+      }
+
+      // Insert segments with new content
+      for (let j = 0; j < changedEntries.length; j++) {
+        const [hash, i] = changedEntries[j]
+        const embedding = embeddings[j]
+        const segBody = segments[i]
+
+        await client.query(
+          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
+           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+          [
+            documentId,
+            indexId,
+            i,
+            segBody,
+            hash,
+            JSON.stringify(embedding),
+            textSearchConfig,
+            segBody,
+            countTokens(segBody),
+          ]
+        )
+      }
+
+      // Update index counters
+      if (isInsert) {
+        await client.query(
+          'UPDATE search_indexes SET total_documents = total_documents + 1 WHERE index_id = $1',
+          [indexId]
+        )
+      }
       await client.query(
-        'UPDATE search_indexes SET total_documents = total_documents + 1 WHERE index_id = $1',
+        'UPDATE search_indexes SET docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
         [indexId]
       )
+
+      // Apply incremental BM25 stat maintenance (DF + length averages)
+      const titleUnchanged = existingDocumentId !== undefined && oldTitle === request.title
+      const segmentsUnchanged = changed.size === 0 && removedHashes.length === 0
+      if (!(titleUnchanged && segmentsUnchanged)) {
+        const newTerms = await documentTermSet(client, documentId)
+        const newStats = await documentStats(client, documentId)
+        await applyMaintenance(client, {
+          indexId,
+          oldTerms,
+          newTerms,
+          deltaTitle: newStats.titleLength - oldStats.titleLength,
+          deltaBody: newStats.bodyLength - oldStats.bodyLength,
+          deltaSegments: newStats.segments - oldStats.segments,
+        })
+      }
+
+      await client.query('COMMIT')
+
+      return {
+        external_id: request.external_id,
+        segments: storedSegmentCount,
+        changed: changed.size,
+        unchanged: unchanged.size,
+        status: 'indexed',
+      } as IngestResponse
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
     }
-    await client.query(
-      'UPDATE search_indexes SET docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
-      [indexId]
-    )
-
-    // Apply incremental BM25 stat maintenance (DF + length averages)
-    const titleUnchanged = existingDocumentId !== undefined && oldTitle === request.title
-    const segmentsUnchanged = changed.size === 0 && removedHashes.length === 0
-    if (!(titleUnchanged && segmentsUnchanged)) {
-      const newTerms = await documentTermSet(client, documentId)
-      const newStats = await documentStats(client, documentId)
-      await applyMaintenance(client, {
-        indexId,
-        oldTerms,
-        newTerms,
-        deltaTitle: newStats.titleLength - oldStats.titleLength,
-        deltaBody: newStats.bodyLength - oldStats.bodyLength,
-        deltaSegments: newStats.segments - oldStats.segments,
-      })
-    }
-
-    await client.query('COMMIT')
-
-    response = {
-      external_id: request.external_id,
-      segments: storedSegmentCount,
-      changed: changed.size,
-      unchanged: unchanged.size,
-      status: 'indexed',
-    }
-  } catch (err) {
-    await client.query('ROLLBACK')
-    throw err
-  } finally {
-    client.release()
-  }
-
+  })
   return response
 }
 
