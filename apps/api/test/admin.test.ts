@@ -15,6 +15,9 @@ describe('admin reconcile route', () => {
   let pool: Pool
 
   beforeAll(async () => {
+    // The route handlers connect via getPool() (DB_* env), while the test drives
+    // setup through getTestPool() (TEST_DB_* env). Point DB_* at the same test DB
+    // before the first getPool() call (which happens lazily inside app.request).
     process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
     process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
     process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'

@@ -70,22 +70,20 @@ Response:
 
 See [docs/ingestion.md](ingestion.md) for details on how documents are chunked and which parse library is used.
 
-## Step 3: Refresh the index
+## Step 3: (Optional) Reconcile statistics
+
+BM25F term-frequency and average-length statistics are maintained incrementally and transactionally on every ingest and delete, so no refresh step is required. If you ever suspect the statistics have drifted, rebuild them from source:
 
 ```bash
-curl -X POST https://<api-url>/private/key/admin/indexes/my-index/refresh \
+curl -X POST https://<api-url>/private/key/admin/indexes/my-index/reconcile \
   -H "x-api-key: $ADMIN_KEY"
 ```
 
 Response:
 
 ```json
-{"status": "refreshed"}
+{"status": "reconciled"}
 ```
-
-Refresh materializes the term frequency statistics used by BM25F scoring. You don't need to run it after every document — run it once after a bulk ingestion batch.
-
-An auto-refresh triggers automatically when `refresh_threshold` (default: 100) documents have changed since the last refresh.
 
 ## Step 4: Search
 
@@ -139,8 +137,8 @@ await client.ingest('my-index', {
   metadata: { source_url: 'https://example.com/parking' },
 }, index_key)
 
-// Refresh after bulk ingestion
-await client.refreshIndex('my-index')
+// Statistics are maintained automatically; reconcile only if you suspect drift
+await client.reconcileIndex('my-index')
 
 // Search
 const results = await client.search('my-index', 'parking permit', search_key, { limit: 10 })

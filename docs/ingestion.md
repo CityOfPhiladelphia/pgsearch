@@ -163,6 +163,6 @@ CMS sites commonly serve identical content under different URL paths. Each URL i
 
 Use the page's `canonical_url` (extracted by `extractMeta()`) as the `external_id` instead of the source URL. The phila.gov crawler currently uses the source URL directly — this is a known limitation.
 
-### Refresh After Bulk Ingestion
+### Statistics Maintenance
 
-BM25F scoring relies on term frequency statistics stored in a materialized view. After ingesting a batch, refresh the index so scoring uses current IDF values. Auto-refresh triggers when `refresh_threshold` (default 100) documents have changed, but a manual refresh after a bulk load is still good practice.
+BM25F scoring relies on term-frequency and average-length statistics. These are maintained incrementally and transactionally on every ingest and delete, so no refresh step is needed after a bulk load. If you suspect the statistics have drifted, `POST /private/key/admin/indexes/<name>/reconcile` rebuilds them from source.

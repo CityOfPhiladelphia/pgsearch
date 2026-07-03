@@ -24,7 +24,7 @@ See the [phila-ctl documentation](https://github.com/CityOfPhiladelphia/phila-ct
 
 ## Database Schema
 
-Four tables and one materialized view:
+Five tables:
 
 ```
 search_indexes
@@ -34,7 +34,8 @@ search_indexes
   ├── index_key_hash, search_key_hash — bcrypt
   ├── rag_key_hash (nullable) — bcrypt; null = RAG disabled for this index
   ├── total_documents, avg_title_length, avg_body_length — statistics
-  └── docs_changed_since_refresh — triggers auto-refresh
+  ├── total_title_length, total_body_length, total_segments — running sums for incremental averages
+  └── docs_changed_since_refresh — per-index change counter (legacy; slated for removal in a squash migration)
 
 search_documents
   ├── document_id (UUID PK)
@@ -57,9 +58,9 @@ rag_prompts
   ├── content (JSONB) — system, response_format, model, max_tokens, temperature, retrieval
   └── created_at, updated_at
 
-term_document_frequencies (MATERIALIZED VIEW)
-  ├── index_id, term, document_frequency
-  └── Refreshed on manual /refresh or auto-refresh threshold
+term_document_frequencies (TABLE)
+  ├── index_id, term, document_frequency — PK (index_id, term)
+  └── Maintained incrementally on ingest/delete; rebuilt from source via /reconcile
 ```
 
 `index_id` is denormalized onto `search_segments` to avoid joining through `search_documents` on every search query.

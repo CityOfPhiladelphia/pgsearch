@@ -13,7 +13,6 @@ export interface IndexConfig {
   min_vector_score?: number
   max_segment_tokens?: number
   max_segments_per_document?: number
-  refresh_threshold?: number
 }
 
 export interface CreateIndexRequest {

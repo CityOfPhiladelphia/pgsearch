@@ -83,4 +83,4 @@ These are design decisions baked into pgsearch and why they were made:
 
 - **Stemming depends on `text_search_config`.** The default `'english'` config stems words (e.g., "running" → "run") and removes English stop words. If your content is multilingual or domain-specific, this matters.
 
-- **BM25F statistics require refresh.** Term frequency stats are materialized. After significant ingestion, refresh the index so BM25F scoring uses current IDF values. Auto-refresh triggers after `refresh_threshold` (default 100) document changes.
+- **BM25F statistics are maintained incrementally.** Term-frequency and average-length statistics are updated transactionally on every ingest and delete, so BM25F scoring always uses current IDF values without a separate refresh step. If drift is ever suspected, `POST /private/key/admin/indexes/<name>/reconcile` rebuilds them from source.

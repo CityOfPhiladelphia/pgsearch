@@ -17,7 +17,7 @@ describe('search', () => {
   const config = mergeConfig({})
 
   // Fetch a fresh index per query, mirroring how the route resolves it from auth on
-  // each request — keeps BM25 corpus stats current after refreshes.
+  // each request — BM25 corpus stats are maintained incrementally on ingest.
   const search = async (queryText: string, options: HybridSearchOptions = {}) =>
     hybridSearch(pool, (await getIndex(pool, 'search-test'))!, adapter, queryText, options)
 
