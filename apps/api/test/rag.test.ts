@@ -7,7 +7,6 @@ import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex, mintKey, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
-import { refreshIndex } from '../services/refresh'
 import { createPrompt } from '../services/prompts'
 import { runRag } from '../services/rag'
 import { ragRoutes } from '../routes/rag'
@@ -60,9 +59,6 @@ describe('runRag', () => {
       body: 'Veterans qualify for a reduced fee on residential parking permits.',
       metadata: { source_url: 'https://phila.gov/parking/veterans' },
     }, config)
-
-    // Refresh so BM25F has IDF data and avg field lengths are set
-    await refreshIndex(pool, indexId)
 
     await createPrompt(pool, indexId, 'navigator', promptContent)
   })

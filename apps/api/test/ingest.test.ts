@@ -104,21 +104,6 @@ describe('ingest service', () => {
     expect(doc.rows[0].segment_count).toBe(1)
   })
 
-  it('auto-refreshes when ingest crosses the refresh threshold', async () => {
-    const lowThreshold = mergeConfig({ refresh_threshold: 1 })
-    await ingestDocument(pool, indexId, adapter, {
-      external_id: 'auto-refresh',
-      title: 'Auto Refresh',
-      body: 'Content that should trigger a refresh on ingest.',
-    }, lowThreshold)
-    const idx = await pool.query(
-      'SELECT docs_changed_since_refresh, last_refreshed_at FROM search_indexes WHERE index_id = $1',
-      [indexId]
-    )
-    expect(idx.rows[0].last_refreshed_at).not.toBeNull()
-    expect(idx.rows[0].docs_changed_since_refresh).toBe(0)
-  })
-
   it('rejects documents exceeding segment limit', async () => {
     const longBody = Array(200).fill('A paragraph with several words. Another sentence here.').join('\n\n')
     await expect(

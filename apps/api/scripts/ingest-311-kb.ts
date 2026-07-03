@@ -243,17 +243,17 @@ export async function pushDocument(
   return (await res.json()) as IngestResponse
 }
 
-export async function refreshIndex(
+export async function reconcileIndex(
   pgsearchBase: string,
   adminKey: string,
   indexName: string,
 ): Promise<void> {
-  const res = await fetch(`${pgsearchBase}/private/key/admin/indexes/${indexName}/refresh`, {
+  const res = await fetch(`${pgsearchBase}/private/key/admin/indexes/${indexName}/reconcile`, {
     method: 'POST',
     headers: { 'x-api-key': adminKey },
   })
   if (!res.ok) {
-    throw new Error(`refresh failed ${res.status}: ${await res.text()}`)
+    throw new Error(`reconcile failed ${res.status}: ${await res.text()}`)
   }
 }
 
@@ -321,11 +321,11 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log(`[ingest-311-kb] refreshing index`)
+  console.log(`[ingest-311-kb] reconciling index`)
   try {
-    await refreshIndex(env.pgsearchApiBase, env.pgsearchAdminKey, INDEX_NAME)
+    await reconcileIndex(env.pgsearchApiBase, env.pgsearchAdminKey, INDEX_NAME)
   } catch (err) {
-    console.warn(`[ingest-311-kb] refresh failed (documents still indexed):`, err instanceof Error ? err.message : err)
+    console.warn(`[ingest-311-kb] reconcile failed (documents still indexed):`, err instanceof Error ? err.message : err)
   }
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)

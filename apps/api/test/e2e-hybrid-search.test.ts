@@ -5,7 +5,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
-import { refreshIndex } from '../services/refresh'
 import { hybridSearch, type HybridSearchOptions } from '../services/search'
 import { createBedrockAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
@@ -148,24 +147,6 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
     expect(results.length).toBeGreaterThanOrEqual(3)
     console.log(`\n  Ingested ${results.length} documents total`)
   }, 120_000)
-
-  it('refreshes materialized views and index stats', async () => {
-    await refreshIndex(pool, indexId)
-
-    const row = await pool.query(
-      'SELECT total_documents, avg_title_length, avg_body_length, docs_changed_since_refresh, last_refreshed_at FROM search_indexes WHERE index_id = $1',
-      [indexId]
-    )
-    const stats = row.rows[0]
-
-    expect(stats.total_documents).toBeGreaterThanOrEqual(3)
-    expect(stats.docs_changed_since_refresh).toBe(0)
-    expect(stats.last_refreshed_at).not.toBeNull()
-    expect(parseFloat(stats.avg_title_length)).toBeGreaterThan(0)
-    expect(parseFloat(stats.avg_body_length)).toBeGreaterThan(0)
-
-    console.log(`  Stats: ${stats.total_documents} docs, avg title ${stats.avg_title_length} tokens, avg body ${stats.avg_body_length} tokens`)
-  }, 30_000)
 
   it('hybrid search for "pay water bill" returns water-related results', async () => {
     const results = await search('pay water bill', { limit: 5 })

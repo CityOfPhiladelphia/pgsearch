@@ -3,7 +3,7 @@
 
 import { Hono } from 'hono'
 import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
-import { refreshIndex } from '../services/refresh'
+import { reconcileIndex } from '../services/reconcile'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
 import { parseBody, type Schema } from '../middleware/validate'
@@ -54,12 +54,12 @@ adminRoutes.delete('/private/key/admin/indexes/:name', withPool(async ({ pool },
   return c.json({ deleted: true })
 }))
 
-adminRoutes.post('/private/key/admin/indexes/:name/refresh', withPool(async ({ pool }, c) => {
+adminRoutes.post('/private/key/admin/indexes/:name/reconcile', withPool(async ({ pool }, c) => {
   const name = c.req.param('name')!
   const index = await getIndex(pool, name)
   if (!index) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-  await refreshIndex(pool, index.index_id)
-  return c.json({ status: 'refreshed' })
+  await reconcileIndex(pool, index.index_id)
+  return c.json({ status: 'reconciled' })
 }))
 
 adminRoutes.post('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {

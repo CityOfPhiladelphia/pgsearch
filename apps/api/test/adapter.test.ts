@@ -18,7 +18,6 @@ function configWith(provider: string): IndexConfig {
     min_vector_score: 0,
     max_segment_tokens: 500,
     max_segments_per_document: 100,
-    refresh_threshold: 100,
   } as IndexConfig
 }
 

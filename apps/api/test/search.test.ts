@@ -5,7 +5,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { getTestPool, setupSchema, teardownSchema, closePool } from './setup'
 import { createIndex, getIndex } from '../services/indexes'
 import { ingestDocument } from '../services/ingest'
-import { refreshIndex } from '../services/refresh'
 import { vectorCandidates, hybridSearch, type HybridSearchOptions } from '../services/search'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
@@ -46,8 +45,6 @@ describe('search', () => {
       body: 'Visit one of Philadelphia many city parks. Free admission to all parks.',
     }, config)
 
-    // Refresh so BM25F has IDF data
-    await refreshIndex(pool, indexId)
   })
   afterAll(async () => { await teardownSchema(); await closePool() })
 
@@ -89,7 +86,6 @@ describe('search', () => {
         title: 'Parking Info',
         body: longBody,
       }, config, { max_segment_tokens: 15 })
-      await refreshIndex(pool, indexId)
 
       const results = await search('parking', { limit: 10 })
       const multiSegmentResults = results.results.filter(r => r.external_id === 'multi-segment')
@@ -171,7 +167,6 @@ describe('search', () => {
         title: 'Parking Info Detailed',
         body: longBody,
       }, config, { max_segment_tokens: 15 })
-      await refreshIndex(pool, indexId)
     })
 
     it('defaults to 1 (best segment per document)', async () => {

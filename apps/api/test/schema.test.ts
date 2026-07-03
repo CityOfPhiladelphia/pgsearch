@@ -1,5 +1,5 @@
 // ABOUTME: Verifies the database schema applies cleanly and all objects exist.
-// ABOUTME: Confirms tables, materialized view, and tsvector_to_array function are functional.
+// ABOUTME: Confirms tables, term_document_frequencies table, and tsvector_to_array function are functional.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupSchema, teardownSchema, getTestPool, closePool } from './setup'
@@ -58,13 +58,13 @@ describe('database schema', () => {
     expect(columns).toContain('content_hash')
   })
 
-  it('creates term_document_frequencies materialized view', async () => {
+  it('creates term_document_frequencies table', async () => {
     const pool = await getTestPool()
     const result = await pool.query(`
-      SELECT matviewname FROM pg_matviews
-      WHERE matviewname = 'term_document_frequencies'
+      SELECT relkind FROM pg_class WHERE relname = 'term_document_frequencies'
     `)
     expect(result.rows).toHaveLength(1)
+    expect(result.rows[0].relkind).toBe('r')
   })
 
   it('tsvector_to_array function extracts lexemes', async () => {
@@ -75,7 +75,7 @@ describe('database schema', () => {
     expect(terms).toContain('world')
   })
 
-  it('materialized view is queryable on empty tables', async () => {
+  it('term_document_frequencies is queryable on empty tables', async () => {
     const pool = await getTestPool()
     const result = await pool.query('SELECT COUNT(*) FROM term_document_frequencies')
     expect(parseInt(result.rows[0].count)).toBe(0)
