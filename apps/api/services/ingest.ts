@@ -225,6 +225,11 @@ export async function deleteDocument(
   indexId: number,
   externalId: string,
 ): Promise<void> {
+  // Unlike ingestDocument this is not wrapped in withDeadlockRetry: both paths
+  // take the search_indexes row lock (the total_documents UPDATE below) before
+  // writing term_document_frequencies, so writes to one index serialize on that
+  // row and an ingest/delete deadlock cannot form. Keep the UPDATE ahead of
+  // applyMaintenance to preserve that ordering.
   const client = await pool.connect()
   try {
     await client.query('BEGIN')

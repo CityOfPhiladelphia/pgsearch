@@ -85,7 +85,7 @@ Four credentials, three levels:
 
 | Level | Header | Source | Scope |
 |-------|--------|--------|-------|
-| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete, refresh, mint/revoke RAG keys) |
+| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete, reconcile, mint/revoke RAG keys) |
 | Per-index — write | `x-index-key` | Returned by `createIndex` | Ingest documents into a specific index; manage that index's prompts |
 | Per-index — search | `x-search-key` | Returned by `createIndex` | Query a specific index |
 | Per-index — RAG | `x-rag-key` | Returned by admin `mintRagKey` (lazy) | Invoke RAG synthesis against a specific index |
@@ -215,7 +215,7 @@ pgsearch/
 │   ├── api/                   # Lambda search service
 │   │   ├── index.ts           # Hono app + Lambda handler
 │   │   ├── routes/            # admin, ingest, search, prompts, rag, health
-│   │   ├── services/          # search, ingest, score, chunk, refresh,
+│   │   ├── services/          # search, ingest, score, chunk, stats, reconcile,
 │   │   │                      # indexes, prompts, rag, adapter, llm-adapter
 │   │   ├── middleware/        # auth (index/search/rag), error handling
 │   │   ├── db/                # pool, migrate, migrations
