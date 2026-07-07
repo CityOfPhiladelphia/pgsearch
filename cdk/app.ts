@@ -3,6 +3,7 @@ import 'source-map-support/register';
 import { App, Stack } from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as rds from 'aws-cdk-lib/aws-rds';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { LambdaPostgresApi, Confidentiality, Environment, applyNagChecks, applyStandardTags } from '@phila/constructs';
 import { NagSuppressions } from 'cdk-nag';
@@ -57,6 +58,26 @@ const pgsearchApi = new LambdaPostgresApi(stack as any, 'pgsearchApi', {
   // Uncomment for serverless Aurora instead of provisioned RDS:
   // serverless: true,
 });
+
+// pg_cron runs the BM25 reconcile_index_stats job in-DB, off the 30s request-path
+// ceiling. It must be in shared_preload_libraries — a static parameter the default
+// parameter group cannot carry — so attach a custom one. A freshly-created instance
+// boots with it preloaded; an existing instance needs a one-time reboot to pick it
+// up. cron.database_name pins the cron schema (and permits CREATE EXTENSION) to the
+// application database.
+const dbParams = new rds.ParameterGroup(stack, 'PgCronParameters', {
+  engine: rds.DatabaseInstanceEngine.postgres({
+    version: rds.PostgresEngineVersion.of('15.17', '15'),
+  }),
+  description: 'pgsearch: enable pg_cron alongside pg_stat_statements',
+  parameters: {
+    shared_preload_libraries: 'pg_stat_statements,pg_cron',
+    'cron.database_name': 'pgsearch',
+  },
+});
+
+const cfnDb = pgsearchApi.database.instance!.node.defaultChild as rds.CfnDBInstance;
+cfnDb.dbParameterGroupName = dbParams.bindToInstance({}).parameterGroupName;
 
 // WAF override: the AWS Managed Common Rule Set includes SizeRestrictions_BODY,
 // which blocks any request body over 8 KiB. Document ingest payloads are routinely
