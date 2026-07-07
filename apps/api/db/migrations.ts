@@ -174,4 +174,27 @@ END;
 $fn$;
 `,
   },
+  {
+    version: 4,
+    description: 'Enable pg_cron and schedule the nightly reconcile_index_stats job (guarded: no-op where pg_cron is not preloaded)',
+    sql: `
+-- Only act where pg_cron is actually preloaded (RDS with the custom parameter
+-- group). On the dockerized test DB / any env without it, this is a clean no-op,
+-- so the migration stays portable. Guarding on shared_preload_libraries (not
+-- pg_available_extensions) means we never attempt CREATE EXTENSION before the
+-- instance has been rebooted with the new parameter group.
+DO $mig$
+BEGIN
+  IF current_setting('shared_preload_libraries') LIKE '%pg_cron%' THEN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    PERFORM cron.schedule(
+      'reconcile-index-stats',
+      '17 3 * * *',
+      $job$ SELECT reconcile_index_stats(index_id) FROM search_indexes $job$
+    );
+  END IF;
+END
+$mig$;
+`,
+  },
 ]
