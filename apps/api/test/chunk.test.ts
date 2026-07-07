@@ -1,79 +1,79 @@
 // ABOUTME: Tests for text chunking logic used in document ingestion.
-// ABOUTME: Verifies paragraph splitting, sentence fallback, token counting, and segment merging.
+// ABOUTME: Verifies token-budgeted segmentation, content preservation, and hard splitting of unbreakable tokens.
 
 import { describe, it, expect } from 'vitest'
-import { chunkText, countTokens } from '../services/chunk'
+import { chunkText, estimateTokens, wordCount } from '../services/chunk'
 
-describe('countTokens', () => {
-  it('counts whitespace-delimited tokens', () => {
-    expect(countTokens('hello world')).toBe(2)
-    expect(countTokens('one two three four five')).toBe(5)
+// Non-whitespace content, in order, must survive chunking — whitespace at segment
+// boundaries is not significant for embedding or tsvector.
+const stripWs = (s: string) => s.replace(/\s+/g, '')
+
+describe('estimateTokens', () => {
+  it('estimates one token per three characters, rounding up', () => {
+    expect(estimateTokens('abc')).toBe(1)
+    expect(estimateTokens('abcd')).toBe(2)
+    expect(estimateTokens('abcdefg')).toBe(3)
   })
 
   it('returns 0 for empty string', () => {
-    expect(countTokens('')).toBe(0)
+    expect(estimateTokens('')).toBe(0)
+  })
+})
+
+describe('wordCount', () => {
+  it('counts whitespace-delimited words', () => {
+    expect(wordCount('hello world')).toBe(2)
+    expect(wordCount('one two three four five')).toBe(5)
   })
 
-  it('handles multiple spaces', () => {
-    expect(countTokens('hello   world')).toBe(2)
+  it('returns 0 for empty string', () => {
+    expect(wordCount('')).toBe(0)
+  })
+
+  it('collapses runs of whitespace', () => {
+    expect(wordCount('hello   world')).toBe(2)
   })
 })
 
 describe('chunkText', () => {
-  it('returns single segment for short text', () => {
-    const segments = chunkText('Short paragraph.', { maxTokens: 500, minTokens: 50 })
-    expect(segments).toHaveLength(1)
-    expect(segments[0]).toBe('Short paragraph.')
+  it('returns a single segment for text within budget', () => {
+    expect(chunkText('Short paragraph.', 500)).toEqual(['Short paragraph.'])
   })
 
-  it('splits on paragraph boundaries', () => {
-    const text = 'First paragraph with enough words to be meaningful and pass the minimum.\n\nSecond paragraph also with enough words to be meaningful and pass the minimum.'
-    const segments = chunkText(text, { maxTokens: 15, minTokens: 3 })
-    expect(segments).toHaveLength(2)
-    expect(segments[0]).toContain('First paragraph')
-    expect(segments[1]).toContain('Second paragraph')
+  it('returns no segments for empty or whitespace-only text', () => {
+    expect(chunkText('', 500)).toEqual([])
+    expect(chunkText('   \n\n   ', 500)).toEqual([])
   })
 
-  it('splits long paragraphs on sentence boundaries', () => {
-    const longParagraph = 'Sentence one about something important. Sentence two about another thing entirely. Sentence three is here with more words. Sentence four follows with content. Sentence five ends it all.'
-    const segments = chunkText(longParagraph, { maxTokens: 12, minTokens: 3 })
-    expect(segments.length).toBeGreaterThan(1)
-    // Each segment should be a complete sentence or group of sentences
-    segments.forEach(s => expect(s.trim().length).toBeGreaterThan(0))
+  it('keeps every segment within the token budget', () => {
+    const text = Array(80).fill(
+      'Residents can pay their water bill online through the city portal.',
+    ).join('\n\n')
+    const segs = chunkText(text, 50)
+    expect(segs.length).toBeGreaterThan(1)
+    segs.forEach((s) => expect(estimateTokens(s)).toBeLessThanOrEqual(50))
   })
 
-  it('merges short trailing segments into previous', () => {
-    const text = 'A substantial first paragraph with many words filling the space adequately for testing purposes.\n\nTiny.'
-    const segments = chunkText(text, { maxTokens: 500, minTokens: 50 })
-    expect(segments).toHaveLength(1) // "Tiny." merges into first
-  })
-
-  it('handles empty text', () => {
-    const segments = chunkText('', { maxTokens: 500, minTokens: 50 })
-    expect(segments).toHaveLength(0)
-  })
-
-  it('handles text with only whitespace', () => {
-    const segments = chunkText('   \n\n   ', { maxTokens: 500, minTokens: 50 })
-    expect(segments).toHaveLength(0)
-  })
-
-  it('handles single paragraph that exceeds maxTokens', () => {
-    const longText = Array(100).fill('word').join(' ')
-    const segments = chunkText(longText, { maxTokens: 20, minTokens: 3 })
-    expect(segments.length).toBeGreaterThan(1)
-    // No segment should massively exceed maxTokens
-    segments.forEach(s => {
-      expect(countTokens(s)).toBeLessThanOrEqual(25) // some tolerance for sentence boundaries
-    })
-  })
-
-  it('preserves all content across segments', () => {
+  it('preserves all non-whitespace content in order', () => {
     const text = 'First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here.'
-    const segments = chunkText(text, { maxTokens: 5, minTokens: 2 })
-    const rejoined = segments.join(' ')
-    expect(rejoined).toContain('First paragraph')
-    expect(rejoined).toContain('Second paragraph')
-    expect(rejoined).toContain('Third paragraph')
+    const segs = chunkText(text, 5)
+    expect(stripWs(segs.join(''))).toBe(stripWs(text))
+  })
+
+  it('prefers paragraph boundaries when splitting', () => {
+    const text = 'Alpha beta gamma delta epsilon.\n\nZeta eta theta iota kappa.'
+    // Budget fits one paragraph but not both -> split on the blank line.
+    const segs = chunkText(text, 12)
+    expect(segs).toEqual(['Alpha beta gamma delta epsilon.', 'Zeta eta theta iota kappa.'])
+  })
+
+  it('hard-splits a single unbroken token that exceeds the budget', () => {
+    // A 30k-char token with no whitespace: the regression behind pgsearch-a6j,
+    // where the old word-count chunker emitted it as one oversized segment.
+    const giant = 'x'.repeat(30_000)
+    const segs = chunkText(`Intro text.\n\n${giant}`, 500)
+    expect(segs.length).toBeGreaterThan(1)
+    segs.forEach((s) => expect(estimateTokens(s)).toBeLessThanOrEqual(500))
+    expect(stripWs(segs.join(''))).toBe(stripWs(`Intro text.\n\n${giant}`))
   })
 })

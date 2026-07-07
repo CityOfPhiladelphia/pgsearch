@@ -1,80 +1,64 @@
 // ABOUTME: Text chunking for document ingestion.
-// ABOUTME: Splits body text on paragraph and sentence boundaries targeting a configurable token size.
+// ABOUTME: Splits body text into token-budgeted segments, preferring coarse boundaries.
 
-export interface ChunkOptions {
-  maxTokens: number
-  minTokens: number
-}
+// Conservative chars-per-token: real English averages ~4, so dividing by 3
+// over-counts tokens and skews segments smaller — headroom below the embedding
+// model's hard input limit, which sits far above any sane per-segment budget.
+const CHARS_PER_TOKEN = 3
 
-export function countTokens(text: string): number {
+// Split candidates, coarse to fine. '' is the terminal case: split between every
+// character, so an unbreakable token (a long URL, a data: URI) is always reducible
+// to fit the budget rather than emitted whole.
+const SEPARATORS = ['\n\n', '\n', '. ', ' ', '']
+
+export const estimateTokens = (text: string): number => Math.ceil(text.length / CHARS_PER_TOKEN)
+
+// Whitespace word count, used for BM25 length normalization — not for chunk sizing.
+export function wordCount(text: string): number {
   const trimmed = text.trim()
-  if (trimmed.length === 0) return 0
-  return trimmed.split(/\s+/).length
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length
 }
 
-export function chunkText(text: string, options: ChunkOptions): string[] {
-  const { maxTokens, minTokens } = options
-  const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0)
+export function chunkText(text: string, maxTokens: number): string[] {
+  return pack(splitToFit(text, maxTokens, SEPARATORS), maxTokens)
+}
 
-  if (paragraphs.length === 0) return []
+// Break text into atoms that each fit the budget. Separators stay attached to
+// their piece, so the atoms concatenate back into the original text losslessly.
+function splitToFit(text: string, maxTokens: number, separators: string[]): string[] {
+  if (estimateTokens(text) <= maxTokens) return text ? [text] : []
+  const [separator, ...rest] = separators
+  return splitOn(text, separator).flatMap((piece) =>
+    !piece
+      ? []
+      : estimateTokens(piece) <= maxTokens
+        ? [piece]
+        : splitToFit(piece, maxTokens, rest.length ? rest : ['']),
+  )
+}
 
+// Split on the separator while keeping it attached to the preceding piece.
+function splitOn(text: string, separator: string): string[] {
+  if (separator === '') return [...text]
+  return text.split(new RegExp(`(?<=${escapeRegExp(separator)})`))
+}
+
+// Greedily concatenate adjacent atoms up to the budget.
+function pack(atoms: string[], maxTokens: number): string[] {
   const segments: string[] = []
   let current = ''
-
-  for (const paragraph of paragraphs) {
-    const paragraphTokens = countTokens(paragraph)
-
-    if (paragraphTokens > maxTokens) {
-      // Flush current segment if non-empty
-      if (current.trim()) {
-        segments.push(current.trim())
-        current = ''
-      }
-      // Split long paragraph on sentence boundaries, with word-count fallback
-      const sentences = splitSentences(paragraph)
-      for (const sentence of sentences) {
-        const pieces = countTokens(sentence) > maxTokens
-          ? splitByWordCount(sentence, maxTokens)
-          : [sentence]
-        for (const piece of pieces) {
-          if (countTokens(current + ' ' + piece) > maxTokens && current.trim()) {
-            segments.push(current.trim())
-            current = piece
-          } else {
-            current = current ? current + ' ' + piece : piece
-          }
-        }
-      }
-    } else if (countTokens(current + '\n\n' + paragraph) > maxTokens && current.trim()) {
-      segments.push(current.trim())
-      current = paragraph
+  for (const atom of atoms) {
+    if (current && estimateTokens(current + atom) > maxTokens) {
+      if (current.trim()) segments.push(current.trim())
+      current = atom
     } else {
-      current = current ? current + '\n\n' + paragraph : paragraph
+      current += atom
     }
   }
-
-  if (current.trim()) {
-    segments.push(current.trim())
-  }
-
-  // Merge short trailing segment into previous
-  if (segments.length > 1 && countTokens(segments[segments.length - 1]) < minTokens) {
-    const last = segments.pop()!
-    segments[segments.length - 1] += '\n\n' + last
-  }
-
+  if (current.trim()) segments.push(current.trim())
   return segments
 }
 
-function splitSentences(text: string): string[] {
-  return text.split(/(?<=[.?!])\s+/).filter(s => s.trim().length > 0)
-}
-
-function splitByWordCount(text: string, maxTokens: number): string[] {
-  const words = text.trim().split(/\s+/)
-  const chunks: string[] = []
-  for (let i = 0; i < words.length; i += maxTokens) {
-    chunks.push(words.slice(i, i + maxTokens).join(' '))
-  }
-  return chunks
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

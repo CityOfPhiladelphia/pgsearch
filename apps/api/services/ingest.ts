@@ -6,7 +6,7 @@ import crypto from 'crypto'
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
-import { chunkText, countTokens } from './chunk'
+import { chunkText, wordCount } from './chunk'
 import { documentTermSet, documentStats, applyMaintenance } from './stats'
 
 interface IngestConfigOverrides {
@@ -41,7 +41,7 @@ export async function ingestDocument(
   const maxSegmentsPerDoc = configOverrides?.max_segments_per_document ?? config.max_segments_per_document
 
   // Chunk the body text
-  const segments = chunkText(request.body, { maxTokens: maxSegmentTokens, minTokens: 50 })
+  const segments = chunkText(request.body, maxSegmentTokens)
 
   // Guardrail: reject if too many segments
   assert(
@@ -125,7 +125,7 @@ export async function ingestDocument(
           request.title,
           textSearchConfig,
           request.title,
-          countTokens(request.title),
+          wordCount(request.title),
           JSON.stringify(request.metadata || {}),
           storedSegmentCount,
         ]
@@ -168,7 +168,7 @@ export async function ingestDocument(
             JSON.stringify(embedding),
             textSearchConfig,
             segBody,
-            countTokens(segBody),
+            wordCount(segBody),
           ]
         )
       }

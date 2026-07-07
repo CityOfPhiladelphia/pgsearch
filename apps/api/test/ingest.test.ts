@@ -86,7 +86,9 @@ describe('ingest service', () => {
   })
 
   it('dedupes identical segments within a document', async () => {
-    const paragraph = Array(55).fill('word').join(' ')
+    // Each paragraph fits one segment (~58 est-tokens, under the 60 budget), so the
+    // two identical paragraphs produce two identical segments that must dedupe to one.
+    const paragraph = Array(35).fill('word').join(' ')
     const body = `${paragraph}\n\n${paragraph}`
     await ingestDocument(pool, indexId, adapter, {
       external_id: 'dup-seg',
