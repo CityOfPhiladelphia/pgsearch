@@ -14,7 +14,7 @@ describe('config', () => {
     expect(config.rrf_weights).toEqual({ bm25: 1.0, vector: 1.0 })
     expect(config.min_bm25_score).toBe(0)
     expect(config.min_vector_score).toBe(0)
-    expect(config.max_segment_tokens).toBe(500)
+    expect(config.max_segment_tokens).toBe(1000)
     expect(config.max_segments_per_document).toBe(100)
     expect(config.text_search_config).toBe('english')
   })

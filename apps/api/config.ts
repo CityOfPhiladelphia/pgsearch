@@ -19,7 +19,7 @@ export const DEFAULT_CONFIG: IndexConfig = {
   rrf_weights: { bm25: 1.0, vector: 1.0 },
   min_bm25_score: 0,
   min_vector_score: 0,
-  max_segment_tokens: 500,
+  max_segment_tokens: 1000,
   max_segments_per_document: 100,
 }
 

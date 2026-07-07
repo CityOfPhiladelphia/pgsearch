@@ -9,10 +9,16 @@ import { chunkText, estimateTokens, wordCount } from '../services/chunk'
 const stripWs = (s: string) => s.replace(/\s+/g, '')
 
 describe('estimateTokens', () => {
-  it('estimates one token per three characters, rounding up', () => {
+  it('estimates one token per three bytes, rounding up', () => {
     expect(estimateTokens('abc')).toBe(1)
     expect(estimateTokens('abcd')).toBe(2)
     expect(estimateTokens('abcdefg')).toBe(3)
+  })
+
+  it('counts UTF-8 bytes, not characters, for multibyte text', () => {
+    // '中' is 3 UTF-8 bytes: two of them is 6 bytes -> 2 tokens, where a naive
+    // character count would under-estimate at 1. Bytes bound real BPE tokens.
+    expect(estimateTokens('中中')).toBe(2)
   })
 
   it('returns 0 for empty string', () => {
