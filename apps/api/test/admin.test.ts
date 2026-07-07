@@ -1,5 +1,5 @@
-// ABOUTME: Route tests for the admin indexes reconcile endpoint.
-// ABOUTME: Verifies reconcile returns 200 on an existing index and 404 on a missing index.
+// ABOUTME: Route tests for the admin reconcile and pg_cron-status endpoints.
+// ABOUTME: Verifies reconcile 200/404 and that pgcron-status reports a not-installed DB.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { Hono } from 'hono'
@@ -57,5 +57,14 @@ describe('admin reconcile route', () => {
     expect(res.status).toBe(404)
     const body = await res.json() as { error: { code: string } }
     expect(body.error.code).toBe('NOT_FOUND')
+  })
+
+  it('pgcron-status reports not-installed on a DB without pg_cron', async () => {
+    const res = await app.request('/private/key/admin/pgcron-status')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { shared_preload_libraries: string; pg_cron_installed: boolean; jobs: unknown[] }
+    expect(typeof body.shared_preload_libraries).toBe('string')
+    expect(body.pg_cron_installed).toBe(false)  // dockerized test DB has no pg_cron
+    expect(body.jobs).toEqual([])
   })
 })
