@@ -62,9 +62,10 @@ describe('admin reconcile route', () => {
   it('pgcron-status reports not-installed on a DB without pg_cron', async () => {
     const res = await app.request('/private/key/admin/pgcron-status')
     expect(res.status).toBe(200)
-    const body = await res.json() as { shared_preload_libraries: string; pg_cron_installed: boolean; jobs: unknown[] }
+    const body = await res.json() as { shared_preload_libraries: string; pg_cron_installed: boolean; jobs: unknown[]; recent_runs: unknown[] }
     expect(typeof body.shared_preload_libraries).toBe('string')
     expect(body.pg_cron_installed).toBe(false)  // dockerized test DB has no pg_cron
     expect(body.jobs).toEqual([])
+    expect(body.recent_runs).toEqual([])
   })
 })
