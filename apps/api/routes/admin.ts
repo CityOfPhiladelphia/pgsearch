@@ -74,6 +74,15 @@ adminRoutes.post('/private/key/admin/indexes/:name/rag-key', withPool(async ({ p
   return c.json({ rag_key: result.key }, 201)
 }))
 
+// Mints (rotates) the search key — search keys are otherwise only issued at index
+// creation, leaving no way to recover or roll one that was lost or leaked.
+adminRoutes.post('/private/key/admin/indexes/:name/search-key', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const result = await mintKey(pool, name, 'search')
+  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ search_key: result.key }, 201)
+}))
+
 adminRoutes.delete('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {
   const name = c.req.param('name')!
   const revoked = await revokeKey(pool, name, 'rag')

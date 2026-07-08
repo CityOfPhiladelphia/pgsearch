@@ -68,4 +68,26 @@ describe('admin reconcile route', () => {
     expect(body.jobs).toEqual([])
     expect(body.recent_runs).toEqual([])
   })
+
+  it('mints (rotates) a search key for an existing index', async () => {
+    await createIndex(pool, { name: 'search-key-test' })
+
+    const res = await app.request('/private/key/admin/indexes/search-key-test/search-key', {
+      method: 'POST',
+    })
+
+    expect(res.status).toBe(201)
+    const body = await res.json() as { search_key: string }
+    expect(body.search_key).toMatch(/^srch_/)
+  })
+
+  it('returns 404 minting a search key for a missing index', async () => {
+    const res = await app.request('/private/key/admin/indexes/does-not-exist/search-key', {
+      method: 'POST',
+    })
+
+    expect(res.status).toBe(404)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe('NOT_FOUND')
+  })
 })
