@@ -9,7 +9,7 @@ PostgreSQL hybrid search + RAG service combining BM25F full-text keyword scoring
 
 - **Index** — a named, isolated search namespace. Each index has its own configuration, authentication keys, documents, and vector index. Create one per content domain (e.g., "services-programs", "city-news").
 - **Document** — a searchable unit identified by `external_id`. Has a title, body text, and optional metadata. The body is automatically split into segments for embedding.
-- **Segment** — a chunk of document body (~500 words). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
+- **Segment** — a chunk of document body sized to a token budget (default ~1000, estimated from UTF-8 byte length). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
 - **Hybrid search** — each query runs two passes: keyword matching (BM25F on tsvectors) and semantic similarity (pgvector cosine distance). Results are combined using Reciprocal Rank Fusion (RRF) for robust ranking.
 - **RAG** — `/public/rag/:name?prompt=<name>` retrieves the top chunks for a question and asks an LLM to synthesize an answer with inline citations. Prompts are per-index DB entities; RAG access is gated by a separate `x-rag-key`.
 

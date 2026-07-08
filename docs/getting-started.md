@@ -36,6 +36,14 @@ Save both keys from the response:
 - `index_key` — used to write documents to this index
 - `search_key` — used to query this index
 
+Search keys are shown only here, at creation. If one is lost or leaked, rotate it with the admin key — this issues a fresh `search_key` and invalidates the old one:
+
+```bash
+curl -X POST https://<api-url>/private/key/admin/indexes/my-index/search-key \
+  -H "x-api-key: $ADMIN_KEY"
+# → {"search_key":"srch_..."}
+```
+
 The default configuration is tuned for English content. You can pass a `config` object at creation time to override defaults. See [docs/search.md](search.md) for all tuning parameters.
 
 ## Step 2: Ingest a document

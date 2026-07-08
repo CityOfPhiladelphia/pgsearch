@@ -92,16 +92,11 @@ Documents are returned in ascending `external_id` order. To export the full inde
 
 ## Segmentation
 
-Body text is split into segments for embedding. The chunker:
+Body text is split into segments for embedding. The chunker splits on the coarsest boundary that fits — paragraph, then line, then sentence, then word, and finally between characters as a last resort — so even an unbreakable token (a long URL, a `data:` URI) is reduced to fit. The resulting pieces are then greedily packed back up to `max_segment_tokens`.
 
-1. Splits on paragraph boundaries (double newlines)
-2. If a paragraph exceeds `max_segment_tokens` (default 500 words), splits on sentence boundaries
-3. If a sentence still exceeds the limit, falls back to word-count splitting
-4. Short trailing segments (under 50 words) are merged into the previous segment
+Segment size is measured by an estimate of `ceil(UTF-8 bytes / 3)`. A byte-level BPE token spans at least one byte, so real embedding tokens never exceed the byte count — this keeps every segment safely under the embedding model's hard input limit (Titan Embed v2: 8192) regardless of script or content, without tokenizing locally.
 
-Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. The 500-word default balances these concerns for typical web content.
-
-Configurable per-index via `max_segment_tokens` and `max_segments_per_document` (default 100).
+Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. Configurable per-index via `max_segment_tokens` (default 1000) and `max_segments_per_document` (default 100).
 
 ## The Parse Library (`@phila/search-parse`)
 

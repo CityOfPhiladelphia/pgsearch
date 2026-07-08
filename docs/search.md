@@ -71,7 +71,7 @@ These are design decisions baked into pgsearch and why they were made:
 
 - **One result per document by default** — the best-scoring segment wins. The internal `maxChunksPerDoc` knob lifts this cap (used by RAG to pull multiple sections from a source); the search route always uses the default of 1.
 
-- **Segment size ~500 words** — the chunker uses whitespace-delimited word count (not model tokenization). Balances embedding quality with context preservation. Configurable via `max_segment_tokens`.
+- **Segment size (~1000-token budget)** — the chunker sizes segments by a byte-based token estimate (`ceil(UTF-8 bytes / 3)`), which upper-bounds real embedding tokens without local tokenization. Balances embedding quality with context preservation. Configurable via `max_segment_tokens`.
 
 ---
 
