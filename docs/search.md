@@ -13,7 +13,7 @@ Each query runs two independent retrieval passes, then combines the results into
 
 1. **BM25F pass** — full-text keyword search. PostgreSQL tsvectors match stemmed query terms against title and body fields. Title matches are weighted 3x by default.
 
-2. **Vector pass** — semantic similarity. The query is embedded and compared against document segment embeddings using pgvector HNSW cosine similarity.
+2. **Vector pass** — semantic similarity. The query is embedded and compared against document segment embeddings by pgvector cosine distance. The comparison is exact: every segment in the index is scanned. See [Search Performance and the Vector Index](search-performance.md).
 
 3. **Score floors** — each pass's candidates are filtered by a minimum score threshold. Candidates below the floor are excluded before fusion. Defaults are off (0).
 
@@ -84,3 +84,5 @@ These are design decisions baked into pgsearch and why they were made:
 - **Stemming depends on `text_search_config`.** The default `'english'` config stems words (e.g., "running" → "run") and removes English stop words. If your content is multilingual or domain-specific, this matters.
 
 - **BM25F statistics are maintained incrementally.** Term-frequency and average-length statistics are updated transactionally on every ingest and delete, so BM25F scoring always uses current IDF values without a separate refresh step. If drift is ever suspected, `POST /private/key/admin/indexes/<name>/reconcile` rebuilds them from source.
+
+- **Vector search cost grows with the corpus.** The vector pass scans every segment in the index, so its latency scales linearly with segment count and depends on whether the embeddings fit in the database's page cache. [Search Performance and the Vector Index](search-performance.md) covers the measurements and what an approximate index would change.
