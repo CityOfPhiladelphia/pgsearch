@@ -5,3 +5,6 @@ dist/
 *.js.map
 cdk.out/
 storage/
+.DS_Store
+.vscode/
+apps/crawler/scripts/setup-index.ts
