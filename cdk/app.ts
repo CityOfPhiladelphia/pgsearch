@@ -79,18 +79,33 @@ const dbParams = new rds.ParameterGroup(stack, 'PgCronParameters', {
 const cfnDb = pgsearchApi.database.instance!.node.defaultChild as rds.CfnDBInstance;
 cfnDb.dbParameterGroupName = dbParams.bindToInstance({}).parameterGroupName;
 
-// WAF override: the AWS Managed Common Rule Set includes SizeRestrictions_BODY,
-// which blocks any request body over 8 KiB. Document ingest payloads are routinely
-// 10-60 KB of parsed markdown, so without this override every POST /public/index/*
-// /documents call is rejected with a 403 before reaching the Lambda. Set the rule to
-// Count so it's still observable in CloudWatch without blocking. Delete this block
-// once @phila/constructs exposes a first-class commonRuleSetOverrides prop.
+// WAF overrides: the AWS Managed Common Rule Set inspects the whole request body
+// for signatures that only make sense on a body whose fields are interpreted.
+// A document ingest payload is prose, stored as text and never executed nor used
+// as a filesystem path, so these three rules can only produce false positives on
+// POST /public/index/*/documents. Count keeps every match observable in CloudWatch
+// and the WAF logs without blocking; the rules stay non-terminating, so a matching
+// request is still evaluated against the rest of the ACL. Delete this block once
+// @phila/constructs exposes a first-class commonRuleSetOverrides prop.
+//
+//   SizeRestrictions_BODY  — bodies over 8 KiB; parsed markdown runs 10-60 KB.
+//   CrossSiteScripting_BODY — any tag bearing a style attribute, and any iframe;
+//                             matches phila.gov pages that quote embed code.
+//   GenericLFI_BODY        — the substring "../"; matches links whose URL elides
+//                             a path segment, e.g. "example.org/.../grant-program/".
+//
+// XSS defence for these documents belongs at render time in the search clients
+// that display them, not in signature matching on ingest.
 const webAcl = pgsearchApi.api.node
   .findChild('Waf')
   .node.findChild('WebAcl') as wafv2.CfnWebACL;
 webAcl.addPropertyOverride(
   'Rules.0.Statement.ManagedRuleGroupStatement.RuleActionOverrides',
-  [{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }],
+  [
+    { Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } },
+    { Name: 'CrossSiteScripting_BODY', ActionToUse: { Count: {} } },
+    { Name: 'GenericLFI_BODY', ActionToUse: { Count: {} } },
+  ],
 );
 
 // The WAF RateLimitRule (priority 2) defaults to 1000 requests / 5 min per IP.
