@@ -53,6 +53,11 @@ const pgsearchApi = new LambdaPostgresApi(stack as any, 'pgsearchApi', {
   handler: 'index.handler',
   codeDir: '../apps/api/dist',
   reservedConcurrentExecutions: 5,
+  // Segment embeddings are stored out of line: the phila-gov index alone holds
+  // ~195 MB of TOASTed vectors, which a semantic query reads in full whenever
+  // the ANN index cannot serve it. The default dev instance has ~1 GB of RAM and
+  // caches almost none of that, so every vector search hits disk.
+  instanceSize: 't3.medium',
   multiAz: environment === 'prod' ? true : false,
   ...(networkCidrs ? { networkCidrs } : {}),
   // Uncomment for serverless Aurora instead of provisioned RDS:
