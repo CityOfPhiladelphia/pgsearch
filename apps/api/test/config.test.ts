@@ -15,7 +15,7 @@ describe('config', () => {
     expect(config.min_bm25_score).toBe(0)
     expect(config.min_vector_score).toBe(0)
     expect(config.max_segment_tokens).toBe(1000)
-    expect(config.max_segments_per_document).toBe(100)
+    expect(config.max_segments_per_document).toBe(150)
     expect(config.text_search_config).toBe('english')
   })
 

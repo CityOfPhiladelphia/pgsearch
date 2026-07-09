@@ -96,7 +96,7 @@ Body text is split into segments for embedding. The chunker splits on the coarse
 
 Segment size is measured by an estimate of `ceil(UTF-8 bytes / 3)`. A byte-level BPE token spans at least one byte, so real embedding tokens never exceed the byte count — this keeps every segment safely under the embedding model's hard input limit (Titan Embed v2: 8192) regardless of script or content, without tokenizing locally.
 
-Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. Configurable per-index via `max_segment_tokens` (default 1000) and `max_segments_per_document` (default 100).
+Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. Configurable per-index via `max_segment_tokens` (default 1000) and `max_segments_per_document` (default 150).
 
 ## The Parse Library (`@phila/search-parse`)
 

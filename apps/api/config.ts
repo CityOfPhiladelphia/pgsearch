@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG: IndexConfig = {
   min_bm25_score: 0,
   min_vector_score: 0,
   max_segment_tokens: 1000,
-  max_segments_per_document: 100,
+  max_segments_per_document: 150,
 }
 
 export function mergeConfig(overrides: Partial<IndexConfig>, base: IndexConfig = DEFAULT_CONFIG): IndexConfig {
