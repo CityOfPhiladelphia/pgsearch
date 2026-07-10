@@ -42,7 +42,7 @@ See [Getting Started](docs/getting-started.md) for a full walkthrough.
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Create an index, ingest documents, run your first search. |
 | [Search](docs/search.md) | How hybrid search works, scoring parameters, tuning guidance. |
-| [Ingestion](docs/ingestion.md) | Document pipeline, the parse library, the crawler, known pitfalls. |
+| [Ingestion](docs/ingestion.md) | Document pipeline, the parse library, known pitfalls. |
 | [Architecture](docs/architecture.md) | Database schema, multi-tenancy, authentication, design decisions. |
 | [RAG](docs/rag.md) | Synthesize answers with citations using stored prompts and the hybrid retrieval pipeline. |
 
@@ -51,8 +51,6 @@ See [Getting Started](docs/getting-started.md) for a full walkthrough.
 ```
 pgsearch/
 ├── apps/api/             # Lambda search + RAG service (Hono + PostgreSQL + pgvector)
-├── apps/crawler/         # phila.gov web crawler (Crawlee + parse pipelines)
-├── packages/client/      # @phila/pgsearch-client TypeScript SDK
 ├── packages/embeddings/  # @phila/search-embeddings (adapter + Bedrock Titan)
 ├── packages/llm/         # @phila/llm (adapter + Bedrock Claude)
 ├── packages/bedrock-client/ # @phila/bedrock-client (shared lazy SDK client)

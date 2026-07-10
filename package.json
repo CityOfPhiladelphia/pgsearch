@@ -5,15 +5,14 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r --filter './apps/*' --filter './packages/embeddings' --filter './packages/client' --filter './packages/parse' test",
+    "test": "pnpm -r --filter './apps/*' --filter './packages/*' test",
     "synth": "cd cdk && cdk synth",
     "deploy": "cd cdk && cdk deploy",
     "diff": "cd cdk && cdk diff",
     "dev:db": "docker compose -f docker-compose.test.yml up -d postgres",
     "dev:api": "DB_HOST=localhost DB_PORT=5433 DB_NAME=pgsearch_dev DB_USER=pgsearch DB_PASSWORD=testpassword tsx watch apps/api/local.ts",
     "dev:bootstrap": "tsx apps/api/scripts/bootstrap-dev-index.ts",
-    "ingest:311-kb": "tsx --env-file=.env.local apps/api/scripts/ingest-311-kb.ts",
-    "dev:crawl": "tsx apps/crawler/src/cli.ts --endpoint http://localhost:3000 --index phila-services-programs --seed https://www.phila.gov/services/ --seed https://www.phila.gov/programs/"
+    "ingest:311-kb": "tsx --env-file=.env.local apps/api/scripts/ingest-311-kb.ts"
   },
   "workspaces": [
     "cdk",
@@ -36,7 +35,8 @@
       "postcss@<8.5.10": ">=8.5.10",
       "fast-xml-parser@<5.7.0": ">=5.7.0",
       "fast-xml-builder@<=1.1.6": ">=1.1.7",
-      "vite": "^7.3.5"
+      "vite": "^7.3.5",
+      "undici@>=7.0.0 <7.28.0": ">=7.28.0"
     }
   }
 }

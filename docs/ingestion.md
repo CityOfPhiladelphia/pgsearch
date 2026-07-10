@@ -1,5 +1,5 @@
 <!-- ABOUTME: Guide for getting content into pgsearch — document model, ingestion API, and segmentation. -->
-<!-- ABOUTME: Covers the @phila/search-parse library for HTML extraction and the crawler as a reference implementation. -->
+<!-- ABOUTME: Covers the @phila/search-parse library for HTML extraction and known ingestion pitfalls. -->
 
 # Ingestion
 
@@ -136,22 +136,9 @@ const doc = await parse(htmlString)
 
 Pipelines are composable — build one per source site's DOM structure.
 
-## The Crawler as Reference
+## A Reference Implementation
 
-`apps/crawler` is a working example wiring Crawlee + parse pipelines + ingest API for phila.gov.
-
-```bash
-tsx apps/crawler/src/cli.ts \
-  --endpoint https://<api-url> \
-  --index phila-services-programs \
-  --index-key $INDEX_KEY \
-  --seed https://www.phila.gov/services/ \
-  --seed https://www.phila.gov/programs/ \
-  --concurrency 4 \
-  --limit 50
-```
-
-The crawler routes URLs to parse pipelines by path pattern, parses each page, and POSTs to the ingest API. See `apps/crawler/src/parse/` for pipeline definitions.
+The [govsync](https://github.com/CityOfPhiladelphia/govsync) sync worker is the production example: it reconciles a CMS page list against scraped HTML in S3 and the index's document state, parses each changed page with a parse pipeline, and POSTs to the ingest API with a `kind` classified from the URL path.
 
 ## Known Pitfalls
 
@@ -159,7 +146,7 @@ The crawler routes URLs to parse pipelines by path pattern, parses each page, an
 
 CMS sites commonly serve identical content under different URL paths. Each URL ingested as a separate `external_id` creates a separate document — producing duplicate search results with identical titles, snippets, and scores.
 
-Use the page's `canonical_url` (extracted by `extractMeta()`) as the `external_id` instead of the source URL. The phila.gov crawler currently uses the source URL directly — this is a known limitation.
+Use the page's `canonical_url` (extracted by `extractMeta()`) or the CMS's canonical link as the `external_id` instead of the fetched URL. Query-time content collapse (see [search.md](search.md)) hides exact mirrors from results, but each URL still stores and embeds as its own document.
 
 ### Statistics Maintenance
 

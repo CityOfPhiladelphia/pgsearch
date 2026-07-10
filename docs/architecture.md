@@ -219,14 +219,7 @@ pgsearch/
 │   │   ├── config.ts          # Default index configuration
 │   │   ├── types.ts           # Shared type definitions
 │   │   └── test/              # Integration tests
-│   └── crawler/               # phila.gov web crawler
-│       └── src/
-│           ├── cli.ts          # CLI entrypoint
-│           ├── crawl.ts        # Crawlee orchestration
-│           ├── parse/          # Site-specific parse pipelines
-│           └── sink/           # HTTP sink to ingest API
 ├── packages/
-│   ├── client/                # @phila/pgsearch-client SDK
 │   ├── embeddings/            # @phila/search-embeddings (adapter + Bedrock Titan)
 │   ├── llm/                   # @phila/llm (adapter + Bedrock Claude)
 │   ├── bedrock-client/        # @phila/bedrock-client (shared lazy SDK client)
