@@ -24,7 +24,23 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   const validModes: SearchMode[] = ['hybrid', 'bm25', 'semantic']
   if (modeParam && !validModes.includes(modeParam)) return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
 
+  // Replaces the index-config kind_weights for this request when present.
+  const kindWeightsParam = c.req.query('kind_weights')
+  let kindWeights: Record<string, number> | undefined
+  if (kindWeightsParam) {
+    kindWeights = {}
+    for (const pair of kindWeightsParam.split(',')) {
+      const sep = pair.lastIndexOf(':')
+      const kind = pair.slice(0, sep).trim()
+      const weight = Number(pair.slice(sep + 1))
+      if (sep < 1 || !kind || !Number.isFinite(weight) || weight < 0) {
+        return apiError(c, 'VALIDATION_ERROR', 'kind_weights must be comma-separated kind:weight pairs with weights >= 0')
+      }
+      kindWeights[kind] = weight
+    }
+  }
+
   const adapter = getAdapter(index.config)
-  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam })
+  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, kindWeights })
   return c.json(results, 200)
 }))
