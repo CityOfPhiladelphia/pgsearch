@@ -61,7 +61,7 @@ Re-run that comparison after anything that could move recall: an `m`/`ef_constru
 
 ## Operational notes
 
-- **Index builds happen at `createIndex` time, on an empty table**, and are maintained incrementally by inserts — there is no bulk build on the request path. Building an HNSW index over an *existing* large corpus (e.g., for an index created before this design) would not fit the 30-second cold-start migration window; run it as a one-shot `pg_cron` job instead.
+- **Index builds happen at `createIndex` time, on an empty table**, and are maintained incrementally by inserts — there is no bulk build on the request path. Building an HNSW index over an *existing* large corpus (e.g., for an index created before this design) would not fit the 30-second cold-start migration window; run it out-of-band with a direct DB connection instead.
 - **`GET /private/key/admin/db-status`** reports installed extension versions (pgvector 0.8.0 on dev, verified), every `idx_segments_embedding_*` index with its definition and size, and a sampled embedding dimension per index.
 - **Dimensions come from `config.embedding.dimensions`** at both index-creation and query time. Changing an index's embedding dimensions after creation would break expression matching and cast errors on stored vectors — a model change means re-creating the index and re-ingesting.
 - The `phila-gov-en` HNSW index measures ~294 MB — larger than the ~195 MB of TOASTed vectors it indexes. The instance needs room to cache the index's upper layers for best latency, but unlike the sequential scan, performance degrades gracefully rather than falling off a cliff when memory is tight.

@@ -3,7 +3,6 @@
 
 import { Hono } from 'hono'
 import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
-import { pgCronStatus } from '../services/pgcron'
 import { dbStatus } from '../services/dbstatus'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
@@ -53,10 +52,6 @@ adminRoutes.delete('/private/key/admin/indexes/:name', withPool(async ({ pool },
   const deleted = await deleteIndex(pool, name)
   if (!deleted) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ deleted: true })
-}))
-
-adminRoutes.get('/private/key/admin/pgcron-status', withPool(async ({ pool }, c) => {
-  return c.json(await pgCronStatus(pool))
 }))
 
 adminRoutes.get('/private/key/admin/db-status', withPool(async ({ pool }, c) => {

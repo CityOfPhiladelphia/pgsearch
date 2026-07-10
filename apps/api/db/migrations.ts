@@ -91,4 +91,9 @@ export const migrations: Migration[] = [
     description: 'Document kind label for result-type weighting',
     sql: `ALTER TABLE search_documents ADD COLUMN IF NOT EXISTS kind TEXT;`,
   },
+  {
+    version: 7,
+    description: 'Drop pg_cron; its only job died with the BM25F stats subsystem',
+    sql: `DROP EXTENSION IF EXISTS pg_cron;`,
+  },
 ]

@@ -1,5 +1,5 @@
-// ABOUTME: Route tests for the admin pg_cron-status and key-minting endpoints.
-// ABOUTME: Verifies pgcron-status reports a not-installed DB and search-key rotation 201/404.
+// ABOUTME: Route tests for the admin diagnostics and key-minting endpoints.
+// ABOUTME: Verifies admin diagnostics and search-key rotation 201/404.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { Hono } from 'hono'
@@ -35,16 +35,6 @@ describe('admin routes', () => {
 
   afterEach(async () => {
     await cleanupTestData()
-  })
-
-  it('pgcron-status reports not-installed on a DB without pg_cron', async () => {
-    const res = await app.request('/private/key/admin/pgcron-status')
-    expect(res.status).toBe(200)
-    const body = await res.json() as { shared_preload_libraries: string; pg_cron_installed: boolean; jobs: unknown[]; recent_runs: unknown[] }
-    expect(typeof body.shared_preload_libraries).toBe('string')
-    expect(body.pg_cron_installed).toBe(false)  // dockerized test DB has no pg_cron
-    expect(body.jobs).toEqual([])
-    expect(body.recent_runs).toEqual([])
   })
 
   it('db-status reports extensions, embedding indexes, and vector dimensions', async () => {
