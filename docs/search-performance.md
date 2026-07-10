@@ -1,125 +1,67 @@
-<!-- ABOUTME: Why the vector pass is slow, what an ANN index would change, and how it interacts with RRF. -->
-<!-- ABOUTME: Records measurements and constraints for anyone adding an HNSW index to search_segments. -->
+<!-- ABOUTME: How the vector pass uses per-index HNSW expression indexes and interacts with RRF. -->
+<!-- ABOUTME: Records the design constraints, the ef_search invariant, and the recall verification. -->
 
 # Search Performance and the Vector Index
 
-The vector pass of hybrid search is an **exact brute-force KNN scan**. There is no approximate-nearest-neighbour index on `search_segments.embedding`. This document explains why, what it costs, and what has to be true before an HNSW index can be added.
+The vector pass of hybrid search runs against a **per-index partial HNSW expression index**. `createIndex` builds one for every search index at creation time, and `vectorCandidates` in `services/search.ts` is written so the planner matches it. This document explains the design, its one correctness invariant, and how it was verified against exact-scan ground truth.
 
 For how ranking works, see [Search Behavior and Tuning](search.md).
 
 ---
 
-## Why there is no vector index
+## The index shape
 
-The baseline schema (`db/migrations.ts`) declares the column without a dimension:
+The baseline schema (`db/migrations.ts`) declares the embedding column without a dimension so one `search_segments` table can host indexes whose embedding models differ:
 
 ```sql
 embedding       VECTOR,
 ```
 
-pgvector cannot build an `hnsw` or `ivfflat` index on a dimensionless vector column:
-
-```
-CREATE INDEX ... USING hnsw (embedding vector_cosine_ops);
-ERROR:  column does not have dimensions
-```
-
-The column is dimensionless so that one `search_segments` table can host indexes whose embedding models have different dimensions. That flexibility is what forecloses a plain ANN index.
-
-So `vectorCandidates` in `services/search.ts` issues `ORDER BY s.embedding <=> $1::vector LIMIT $3`, which Postgres answers with a sequential scan over every segment belonging to the index.
-
-## What the scan costs
-
-Embeddings are stored **out of line**. The `vector` type uses `external` storage, so a 1024-dimension embedding (~4 KB) exceeds the TOAST threshold and lives in the TOAST relation:
-
-| | |
-|---|---|
-| heap | ~2 MB |
-| TOAST | ~195 MB |
-
-A sequential scan must detoast every embedding. For an index the size of `phila-gov` (16,085 documents / 33,672 segments) that is ~138 MB of vectors read per query.
-
-The cost is therefore dominated by whether those vectors fit in the page cache, not by CPU. Measured against `phila-gov`, warm, on the dev API:
-
-| Mode | 1 GB instance | 4 GB instance |
-|---|---|---|
-| `bm25` | ~0.8–1.0s, spiking to 3–5s | ~0.7–0.9s |
-| `semantic` | ~15s | ~1.0–1.5s |
-| `hybrid` | ~15s | ~1.2–1.4s |
-
-On the 1 GB instance `FreeableMemory` sat at ~62 MB, so nothing cached and each query re-read the vectors from disk. With headroom to cache them, the same sequential scan runs in about a second. CPU was ~5% throughout, with credits unexhausted — the workload is memory- and I/O-bound.
-
-Sequential scan cost grows linearly with segment count.
-
-## Adding an ANN index
-
-A dimensionless column can still be indexed through an **expression index on a cast**, which keeps per-index embedding dimensions available:
+pgvector cannot build an ANN index directly on a dimensionless column, so each search index gets an **expression index on a cast**, with the tenant baked into the predicate:
 
 ```sql
-CREATE INDEX segments_hnsw_<index_name>
-  ON search_segments USING hnsw (((embedding)::vector(1024)) vector_cosine_ops)
-  WHERE index_id = <id>;
+CREATE INDEX idx_segments_embedding_<index_id>
+  ON search_segments USING hnsw (((embedding)::vector(<dims>)) vector_cosine_ops)
+  WHERE index_id = <index_id>;
 ```
 
-Verified on PostgreSQL 15.18 / pgvector 0.8.5: the cast is `IMMUTABLE` so the index builds, and the planner both matches the expression and chooses the index unprompted at realistic scale (34k rows: ~22ms indexed vs ~143ms sequential on the same machine).
+Two properties of this shape matter:
 
-The query must use the identical expression — `ORDER BY embedding::vector(1024) <=> $1::vector` — or the planner will not match the index and silently falls back to a sequential scan.
+**Partial, per index.** An ANN index finds nearest neighbours *before* a `WHERE index_id = $2` filter is applied, so a single index spanning every tenant would return neighbours dominated by the largest one and then discard them — recall for smaller indexes collapses. Baking the tenant into the index predicate avoids that entirely. The cost is one index per search index, which suits tens of indexes, not thousands (pgvector ≥ 0.8's `hnsw.iterative_scan` is the escape hatch if that ever changes).
 
-Two properties of this shape are worth understanding:
+**The query must use the identical expression.** `vectorCandidates` orders by `(embedding)::vector(<dims>) <=> $1::vector`, with `<dims>` taken from the index's embedding config. Without the cast, the planner cannot match the index and silently falls back to a sequential scan — which is exactly what happened for the first months of this service's life: the indexes existed (fully built and maintained, 294 MB for `phila-gov-en`) while every query paid for a brute-force scan of ~138 MB of TOASTed vectors. Measured on the dev instance, that scan ran ~1.0–1.5s warm with the working set cached and ~15s when it wasn't; the indexed path runs sub-second and no longer depends on the page cache holding every embedding.
 
-**Partial, per index.** An ANN index finds nearest neighbours *before* `WHERE index_id = $2` is applied, so a single index spanning every tenant would return neighbours dominated by the largest one and then discard them — recall for smaller indexes collapses. Baking the tenant into the index predicate avoids that entirely. The cost is one index per search index, which suits tens of indexes, not thousands.
+The partial-index predicate stays provable from prepared statements: the partial index makes the *generic* plan look expensive, so Postgres keeps choosing custom plans with the parameter bound.
 
-**The predicate stays provable.** A partial index makes the *generic* plan (`index_id = $1`) look expensive, so Postgres keeps choosing custom plans with the parameter bound, and the index keeps being used even from prepared statements.
+## `hnsw.ef_search` is a correctness invariant
 
-### `hnsw.ef_search` is a correctness invariant
+HNSW returns at most `ef_search` rows (default **40**), and `vectorCandidates` requests up to 200 candidates. `ef_search` must be **greater than or equal to the candidate limit** — below it, the index doesn't reorder results, it silently *truncates the candidate list*. `vectorCandidates` sets it with `SET LOCAL` inside the transaction wrapping the query, because a pool hands out connections without guaranteeing session state.
 
-HNSW returns at most `ef_search` rows, default **40**. `vectorCandidates` requests `LIMIT 200`:
-
-| `hnsw.ef_search` | rows returned for `LIMIT 200` |
-|---|---|
-| 40 | 40 |
-| 200 | 200 |
-
-`ef_search` must be **greater than or equal to the candidate limit**, set with `SET LOCAL` inside a transaction wrapping the vector query. Setting it once per pooled connection is unreliable, because a pool hands out connections without guaranteeing their session state.
-
-This is not a tuning knob. Getting it wrong changes retrieval semantics, as the next section explains.
+This is not a tuning knob, as the next section explains.
 
 ## How approximation interacts with RRF
 
-`hybridSearch` builds its candidate pool as the **union** of the BM25 rows and the vector rows, then assigns each retriever's ranks *within that pool*. A segment missing from a retriever's list contributes nothing from it (`computeRRF` in `services/score.ts`).
+`hybridSearch` builds its candidate pool as the **union** of the keyword rows and the vector rows, then assigns each retriever's ranks *within that pool*. A segment missing from a retriever's list contributes nothing from it (`computeRRF` in `services/score.ts`).
 
 That makes the vector pass a gatekeeper on membership, not merely on ordering, and it means the two error modes of an approximate index are not equally harmful.
 
 **Approximate ordering is nearly free.** With `rrf_k = 60`, `1/(k + rank)` is deliberately flat. Swapping adjacent ranks at the head of the list moves a score by `1/61 - 1/62 ≈ 0.00026`; at rank 100 the same swap moves it by `0.00004`.
 
-**Approximate membership is expensive.** A segment dropped from vector rank 41 loses `1/101 ≈ 0.0099` — roughly forty times the cost of a head-of-list permutation. Worse, a segment retrieved *only* by the vector pass never enters the union pool at all, so it disappears from the results rather than ranking lower. Those semantic-only candidates are exactly the ones BM25 cannot find, and they are concentrated in the tail that a low `ef_search` truncates.
+**Approximate membership is expensive.** A segment dropped from vector rank 41 loses `1/101 ≈ 0.0099` — roughly forty times the cost of a head-of-list permutation. Worse, a segment retrieved *only* by the vector pass never enters the union pool at all, so it disappears from the results rather than ranking lower. Those semantic-only candidates are exactly the ones keyword matching cannot find, and they are concentrated in the tail that a low `ef_search` truncates.
 
-Concretely, with weights of `1.0`: a segment at BM25 rank 30 and vector rank 50 scores `1/90 + 1/110 = 0.0202`, above a BM25 rank-1 segment with no vector hit at `0.0164`. Truncating the vector list at 40 drops it to `0.0111` and reorders the results — with `rrf_weights` untouched.
+**Do not compensate for recall problems with `rrf_weights.vector`.** Raising it amplifies the candidates that survived truncation; it cannot restore the ones that were never returned.
 
-**Do not compensate with `rrf_weights.vector`.** Raising it amplifies the candidates that survived truncation; it cannot restore the ones that were never returned.
+## Verification against exact ground truth
 
-Two factors soften the impact. `maxChunksPerDoc` defaults to 1, so a document is scored by its best *surviving* segment and degrades in rank rather than vanishing. And RRF's tail contributions are its smallest, so the least reliable part of an ANN result set is also the part that matters least.
+Exact KNN is its own ground truth, and the eval harness (`apps/api/scripts/eval/`) captured it before the indexed path shipped. Comparing `captures/final-tsrank-default.json` (exact scan) against `captures/hnsw-wired.json` (indexed path, `ef_search = 200`):
 
-### Measure before switching
+**Identical rankings — overlap@10 and Spearman rho of 1.00 in every category and mode**, across 43 queries at depth 50 on the 33k-segment `phila-gov-en` corpus. At this scale, HNSW with the `ef_search` invariant honored is not an approximation in any measurable sense.
 
-Exact KNN is its own ground truth. Capture the ranked `external_id` list for a set of representative queries **while the vector pass is still exact**, then compare overlap and rank correlation after an ANN index lands. Afterwards, obtaining exact results costs a `SET enable_indexscan = off` and a multi-second query.
+Re-run that comparison after anything that could move recall: an `m`/`ef_construction` change, a pgvector upgrade, or a corpus an order of magnitude larger. Exact rankings for a new corpus can be captured by forcing the sequential path (`SET enable_indexscan = off`) on a non-production instance.
 
-## Building the index
+## Operational notes
 
-Migrations run on Lambda cold start (`db/migrate.ts`), and that Lambda has a **30-second timeout**. Building an HNSW index over tens of thousands of vectors will not finish inside it. A migration that times out is killed mid-`CREATE INDEX`, rolls back, never records its version, and is retried on the next cold start — with `reservedConcurrentExecutions: 5`, several at once.
-
-The index build belongs off the request path, as a one-shot `pg_cron` job.
-
-Sizing note: the HNSW index for a `phila-gov`-sized corpus measures ~266 MB, larger than the TOASTed vectors it indexes. The instance needs room to cache it.
-
----
-
-## Known issues
-
-- **Per-index HNSW expression indexes are created but never used.** `createIndex` builds `idx_segments_embedding_<id>` on `(embedding::vector(dims))`, but `vectorCandidates` orders by `s.embedding <=> $1` without the cast, so the planner cannot match the index — build cost and disk with no query benefit. Wiring the query to the index (with the `ef_search` invariant above) or dropping the creation is tracked in pgsearch-77l.
-
-## Open questions
-
-- **The pgvector version installed on the RDS instances is unverified.** The database is not publicly accessible, there is no bastion or SSM-managed instance in the account, and the RDS API does not expose installed extension versions. HNSW requires pgvector ≥ 0.5.0; `hnsw.iterative_scan` requires ≥ 0.8.0. Reporting `SELECT extname, extversion FROM pg_extension` alongside the existing `/private/key/admin/pgcron-status` response would settle it.
-
-- **Whether `hnsw.iterative_scan` is preferable to partial indexes** for filtered search, if the installed pgvector supports it. It scales past tens of indexes, where per-index partial indexes do not.
+- **Index builds happen at `createIndex` time, on an empty table**, and are maintained incrementally by inserts — there is no bulk build on the request path. Building an HNSW index over an *existing* large corpus (e.g., for an index created before this design) would not fit the 30-second cold-start migration window; run it as a one-shot `pg_cron` job instead.
+- **`GET /private/key/admin/db-status`** reports installed extension versions (pgvector 0.8.0 on dev, verified), every `idx_segments_embedding_*` index with its definition and size, and a sampled embedding dimension per index.
+- **Dimensions come from `config.embedding.dimensions`** at both index-creation and query time. Changing an index's embedding dimensions after creation would break expression matching and cast errors on stored vectors — a model change means re-creating the index and re-ingesting.
+- The `phila-gov-en` HNSW index measures ~294 MB — larger than the ~195 MB of TOASTed vectors it indexes. The instance needs room to cache the index's upper layers for best latency, but unlike the sequential scan, performance degrades gracefully rather than falling off a cliff when memory is tight.

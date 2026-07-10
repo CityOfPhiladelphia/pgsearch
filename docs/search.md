@@ -13,7 +13,7 @@ Each query runs two independent retrieval passes, then combines the results into
 
 1. **Keyword pass** — full-text search in SQL. PostgreSQL tsvectors match stemmed query terms against title and body fields, and matching segments are ranked by `ts_rank_cd` with title matches weighted 3x by default — candidates are ordered *before* the candidate limit is applied, so the top keyword matches always enter fusion.
 
-2. **Vector pass** — semantic similarity. The query is embedded and compared against document segment embeddings by pgvector cosine distance. The comparison is exact: every segment in the index is scanned. See [Search Performance and the Vector Index](search-performance.md).
+2. **Vector pass** — semantic similarity. The query is embedded and compared against document segment embeddings by pgvector cosine distance, answered by a per-index HNSW index with recall verified identical to an exact scan. See [Search Performance and the Vector Index](search-performance.md).
 
 3. **Score floors** — each pass's candidates are filtered by a minimum score threshold. Candidates below the floor are excluded before fusion. Defaults are off (0).
 
@@ -81,4 +81,4 @@ These are design decisions baked into pgsearch and why they were made:
 
 - **Keyword scoring has no IDF.** `ts_rank_cd` scores by weighted cover density and document length, not corpus-wide term rarity. Query matching uses AND semantics (`plainto_tsquery`), so every keyword candidate already contains every query term — rarity discrimination is mostly done by matching, and the vector pass co-ranks. The trade was measured before adoption (see the eval harness under `apps/api/scripts/eval/`).
 
-- **Vector search cost grows with the corpus.** The vector pass scans every segment in the index, so its latency scales linearly with segment count and depends on whether the embeddings fit in the database's page cache. [Search Performance and the Vector Index](search-performance.md) covers the measurements and what an approximate index would change.
+- **The vector pass depends on one invariant.** The HNSW index returns at most `hnsw.ef_search` rows, which must cover the candidate limit or results are silently truncated. The search service maintains this itself; [Search Performance and the Vector Index](search-performance.md) explains why it matters.
