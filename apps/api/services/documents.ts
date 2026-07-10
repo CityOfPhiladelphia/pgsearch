@@ -31,7 +31,7 @@ export async function listDocumentState(
   // statement) planning, which pool.query() provides — a named/generic prepared plan cannot
   // fold the IS NULL branch and would degrade the cursor bound to a filter.
   const result = await pool.query(
-    `SELECT external_id, updated_at, metadata
+    `SELECT external_id, updated_at, kind, metadata
      FROM search_documents
      WHERE index_id = $1 AND ($2::text IS NULL OR external_id > $2)
      ORDER BY external_id ASC
@@ -42,6 +42,7 @@ export async function listDocumentState(
   const documents: DocumentState[] = result.rows.map(row => ({
     external_id: row.external_id,
     updated_at: row.updated_at.toISOString(),
+    kind: row.kind ?? null,
     metadata: row.metadata ?? {},
   }))
 

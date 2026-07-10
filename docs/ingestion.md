@@ -81,6 +81,7 @@ Response:
     {
       "external_id": "page-001",
       "updated_at": "2026-04-10T12:00:00.000Z",
+      "kind": "services",
       "metadata": {"source_url": "https://example.com/parking"}
     }
   ],

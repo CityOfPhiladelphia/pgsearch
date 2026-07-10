@@ -79,6 +79,7 @@ export interface IngestResponse {
 export interface DocumentState {
   external_id: string
   updated_at: string
+  kind: string | null
   metadata: Record<string, unknown>
 }
 

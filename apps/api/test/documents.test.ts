@@ -106,6 +106,16 @@ describe('listDocumentState service', () => {
     expect(doc.updated_at).toBe(new Date(doc.updated_at).toISOString())
   })
 
+  it('returns kind, null when the document has none', async () => {
+    await seedDoc(pool, indexId, 'with-kind')
+    await pool.query("UPDATE search_documents SET kind = 'services' WHERE external_id = 'with-kind'")
+    await seedDoc(pool, indexId, 'without-kind')
+    const page = await listDocumentState(pool, indexId, { limit: 10 })
+    const byId = new Map(page.documents.map(d => [d.external_id, d.kind]))
+    expect(byId.get('with-kind')).toBe('services')
+    expect(byId.get('without-kind')).toBeNull()
+  })
+
   it('lists only the requested index', async () => {
     const otherId = await makeIndex(pool, 'other-idx')
     await seedDoc(pool, indexId, 'mine')
