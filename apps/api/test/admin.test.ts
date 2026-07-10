@@ -47,6 +47,24 @@ describe('admin routes', () => {
     expect(body.recent_runs).toEqual([])
   })
 
+  it('db-status reports extensions, embedding indexes, and vector dimensions', async () => {
+    await createIndex(pool, { name: 'db-status-test' })
+
+    const res = await app.request('/private/key/admin/db-status')
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      extensions: Array<{ name: string; version: string }>
+      embedding_indexes: Array<{ index_name: string; definition: string }>
+      segment_dimensions: Array<{ index_id: number; dimensions: number }>
+    }
+    expect(body.extensions.map(e => e.name)).toContain('vector')
+    // createIndex builds a per-index embedding index; the test index has one
+    expect(body.embedding_indexes.length).toBeGreaterThan(0)
+    expect(body.embedding_indexes[0].definition).toContain('hnsw')
+    // no segments ingested yet, so no dimensions rows
+    expect(body.segment_dimensions).toEqual([])
+  })
+
   it('mints (rotates) a search key for an existing index', async () => {
     await createIndex(pool, { name: 'search-key-test' })
 
