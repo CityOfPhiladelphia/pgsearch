@@ -55,7 +55,7 @@ Update the two version-set assertions in `migrations.test.ts` that pin the migra
 ### Task 2: Types + config default
 
 **Files:**
-- Modify: `apps/api/types.ts` (IndexConfig, SearchDocument, IngestRequest, SearchResult)
+- Modify: `apps/api/types.ts` (IndexConfig, SearchDocument, IngestRequest)
 - Modify: `apps/api/config.ts` (DEFAULT_CONFIG)
 - Test: `apps/api/test/config.test.ts`
 
@@ -74,7 +74,7 @@ it('replaces kind_weights wholesale on override', () => {
 
 - [ ] **Step 2: Run it** — expect FAIL.
 - [ ] **Step 3: Implement** —
-  - `types.ts`: add `kind_weights: Record<string, number>` to `IndexConfig`; `kind: string | null` to `SearchDocument`; `kind?: string` to `IngestRequest`; `kind: string | null` to `SearchResult`.
+  - `types.ts`: add `kind_weights: Record<string, number>` to `IndexConfig`; `kind: string | null` to `SearchDocument`; `kind?: string` to `IngestRequest`.
   - `config.ts`: add `kind_weights: {}` to `DEFAULT_CONFIG`. Do NOT deep-merge it in `mergeConfig` — wholesale replacement is the contract.
 Note: `SearchResult.kind` lands in Task 4 alongside the result mapping — adding it here would break compile with nothing to populate it.
 
@@ -150,7 +150,7 @@ Write these as real assertions against `hybridSearch(pool, index, adapter, q, { 
 
 **Files:**
 - Modify: `apps/api/routes/search.ts`
-- Test: `apps/api/test/routes.test.ts` — but model the tests on the authenticated-route pattern in `test/documents.test.ts` (real DB, `createIndex`-issued key). `routes.test.ts`'s DB-less style short-circuits to 401 before validation runs; if adding authenticated tests there is awkward, put them in a new `test/search-route.test.ts` instead.
+- Test: `apps/api/test/search-route.test.ts` (create) — model on the authenticated-route pattern in `test/documents.test.ts` (real DB, `createIndex`-issued key). `routes.test.ts`'s DB-less style short-circuits to 401 before validation runs, so these tests can't live there.
 
 No 200-path test: the search route calls `getAdapter`, which requires the bedrock provider — no existing test exercises the route to 200 for this reason. Override pass-through is already covered at the service seam by Task 4. Parse and validate `kind_weights` BEFORE the `getAdapter` call so the 400s are reachable in tests.
 

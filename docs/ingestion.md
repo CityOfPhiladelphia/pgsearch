@@ -7,13 +7,14 @@ This guide covers how to get content into pgsearch: the document model, the inge
 
 ## Document Model
 
-A document in pgsearch has four fields:
+A document in pgsearch has five fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `external_id` | Yes | Your unique identifier. Used for upserts — re-ingesting the same `external_id` updates the existing document. |
 | `title` | Yes | Document title. Weighted 3x in keyword search by default. Prepended to each segment before embedding. |
 | `body` | Yes | Document content as plain text or markdown. Automatically chunked into segments. |
+| `kind` | No | Freeform content-stratum label (e.g. `services`, `documents`, `posts`). Returned on search results and matched against the index's `kind_weights` — see [Result-Type Weighting](search.md#result-type-weighting). Omitting it on re-ingest clears it, like every other document field. |
 | `metadata` | No | Arbitrary JSON. Passed through to search results unchanged. Use for source URLs, content types, tags — anything your consumer needs. |
 
 ## Ingestion API
@@ -32,6 +33,7 @@ Request body:
   "external_id": "unique-id",
   "title": "Document Title",
   "body": "Full document content...",
+  "kind": "article",
   "metadata": {"source_url": "https://...", "content_type": "article"}
 }
 ```

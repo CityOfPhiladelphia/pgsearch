@@ -40,6 +40,7 @@ Each index has its own set of scoring parameters. You can adjust them independen
 | `min_vector_score` | `0` | Minimum raw vector similarity score. Candidates below this floor are excluded before fusion. |
 | `field_weights.title` | `3.0` | Keyword weight multiplier for title matches. |
 | `field_weights.body` | `1.0` | Keyword weight multiplier for body matches. |
+| `kind_weights` | `{}` | Per-kind multipliers on the fused score. See [Result-Type Weighting](#result-type-weighting). |
 | `text_search_config` | `'english'` | PostgreSQL text search configuration. Controls stemming and stop words. Change for non-English content. |
 
 ### Updating Parameters
@@ -54,6 +55,35 @@ curl -X PATCH https://<api-url>/private/key/admin/indexes/my-index \
 ```
 
 Changes take effect immediately for new queries.
+
+---
+
+## Result-Type Weighting
+
+Most content corpora carry strata that matter more or less to searchers: a civic site has actionable service pages, department pages, archived documents, and news posts; a records index might stratify as forms, reports, minutes, and notices. pgsearch models this with a freeform `kind` label supplied per document at ingest, and a `kind_weights` map that multiplies each result's fused RRF score by the weight of its kind.
+
+Mechanics:
+
+- Weights multiply the *fused* score, so under `w/(k+r)` scoring a weight acts as a roughly uniform rank shift — at the default `rrf_k` of 60, a weight of `0.85` pushes a result down about 10 ranks. Gentle values go a long way.
+- A document with no `kind`, or a kind not listed in the map, is neutral (`1.0`). The feature is strictly opt-in: with no weights configured, nothing changes.
+- A weight of `0` effectively removes a kind from results without deleting the documents.
+- The engine ships **no default weights** — it has no opinions about labels it doesn't define. Weights live in index config, and each result returns its `kind` so callers can facet.
+
+Search requests can replace the configured map for a single query with the `kind_weights` parameter — useful for faceted UIs and RAG/agent callers that know the searcher's intent, which a single search box doesn't:
+
+```
+GET /public/search/my-index?q=police+report&kind_weights=documents:1.2,services:0.9
+```
+
+The parameter replaces the whole configured map for that request (pass `kind_weights=` pairs for every kind you want weighted). Weights must be `>= 0`.
+
+As a worked example, phila.gov content classifies by URL path into `services`, `departments`, `programs`, `documents`, and `posts`, and a gentle palette that keeps actionable pages above archival material looks like:
+
+```json
+{ "kind_weights": { "services": 1.15, "programs": 1.0, "departments": 0.95, "documents": 0.85, "posts": 0.85 } }
+```
+
+Start gentle (`0.85`–`1.15`), re-run your evals, and only widen the spread when a stratum still floods results.
 
 ---
 
