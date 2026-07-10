@@ -8,7 +8,7 @@ const sendMock = vi.fn()
 vi.mock('@phila/bedrock-client', () => ({
   getBedrockClient: vi.fn(async () => ({
     client: { send: sendMock },
-    InvokeModelCommand: vi.fn((input) => ({ __input: input })),
+    InvokeModelCommand: vi.fn(function (this: { __input: unknown }, input: unknown) { this.__input = input }),
   })),
 }))
 
