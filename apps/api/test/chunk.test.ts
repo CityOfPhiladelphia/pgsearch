@@ -2,7 +2,7 @@
 // ABOUTME: Verifies token-budgeted segmentation, content preservation, and hard splitting of unbreakable tokens.
 
 import { describe, it, expect } from 'vitest'
-import { chunkText, estimateTokens, wordCount } from '../services/chunk'
+import { chunkText, estimateTokens } from '../services/chunk'
 
 // Non-whitespace content, in order, must survive chunking — whitespace at segment
 // boundaries is not significant for embedding or tsvector.
@@ -23,21 +23,6 @@ describe('estimateTokens', () => {
 
   it('returns 0 for empty string', () => {
     expect(estimateTokens('')).toBe(0)
-  })
-})
-
-describe('wordCount', () => {
-  it('counts whitespace-delimited words', () => {
-    expect(wordCount('hello world')).toBe(2)
-    expect(wordCount('one two three four five')).toBe(5)
-  })
-
-  it('returns 0 for empty string', () => {
-    expect(wordCount('')).toBe(0)
-  })
-
-  it('collapses runs of whitespace', () => {
-    expect(wordCount('hello   world')).toBe(2)
   })
 })
 

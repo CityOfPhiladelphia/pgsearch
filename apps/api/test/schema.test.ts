@@ -77,6 +77,12 @@ describe('database schema', () => {
          'total_segments', 'last_refreshed_at', 'docs_changed_since_refresh')
     `)
     expect(cols.rows).toHaveLength(0)
+    const lengthCols = await pool.query(`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE (table_name = 'search_documents' AND column_name = 'title_length')
+         OR (table_name = 'search_segments' AND column_name = 'body_length')
+    `)
+    expect(lengthCols.rows).toHaveLength(0)
   })
 })
 

@@ -6,7 +6,7 @@ import crypto from 'crypto'
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
-import { chunkText, wordCount } from './chunk'
+import { chunkText } from './chunk'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -99,15 +99,14 @@ export async function ingestDocument(
 
       // Upsert document
       const upsertResult = await client.query(
-        `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count, kind)
-         VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8, $9)
+        `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, metadata, segment_count, kind)
+         VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8)
          ON CONFLICT (index_id, external_id) DO UPDATE SET
            title = $3,
            title_tsvector = to_tsvector($4, $5),
-           title_length = $6,
-           metadata = $7,
-           segment_count = $8,
-           kind = $9,
+           metadata = $6,
+           segment_count = $7,
+           kind = $8,
            updated_at = NOW()
          RETURNING document_id, (xmax = 0) AS is_insert`,
         [
@@ -116,7 +115,6 @@ export async function ingestDocument(
           request.title,
           textSearchConfig,
           request.title,
-          wordCount(request.title),
           JSON.stringify(request.metadata || {}),
           storedSegmentCount,
           request.kind ?? null,
@@ -149,8 +147,8 @@ export async function ingestDocument(
         const segBody = segments[i]
 
         await client.query(
-          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector, body_length)
-           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8), $9)`,
+          `INSERT INTO search_segments (document_id, index_id, segment_index, body, content_hash, embedding, body_tsvector)
+           VALUES ($1, $2, $3, $4, $5, $6::vector, to_tsvector($7, $8))`,
           [
             documentId,
             indexId,
@@ -160,7 +158,6 @@ export async function ingestDocument(
             JSON.stringify(embedding),
             textSearchConfig,
             segBody,
-            wordCount(segBody),
           ]
         )
       }

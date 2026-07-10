@@ -96,4 +96,10 @@ export const migrations: Migration[] = [
     description: 'Drop pg_cron; its only job died with the BM25F stats subsystem',
     sql: `DROP EXTENSION IF EXISTS pg_cron;`,
   },
+  {
+    version: 8,
+    description: 'Drop write-only BM25F length-normalization columns',
+    sql: `ALTER TABLE search_documents DROP COLUMN IF EXISTS title_length;
+          ALTER TABLE search_segments DROP COLUMN IF EXISTS body_length;`,
+  },
 ]

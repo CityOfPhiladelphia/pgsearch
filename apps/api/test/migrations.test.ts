@@ -13,14 +13,14 @@ describe('migrations', () => {
 
   it('a fresh database records the baseline and change-set versions', async () => {
     const r = await pool.query('SELECT version FROM schema_migrations ORDER BY version')
-    expect(r.rows.map(row => row.version)).toEqual([5, 6, 7])
+    expect(r.rows.map(row => row.version)).toEqual([5, 6, 7, 8])
   })
 
   it('re-running the migration set is a no-op', async () => {
     resetMigrationState()
     await runMigrations(pool)
     const r = await pool.query('SELECT COUNT(*)::int AS n FROM schema_migrations')
-    expect(r.rows[0].n).toBe(3)
+    expect(r.rows[0].n).toBe(4)
   })
 
   it('search_documents has a nullable kind column', async () => {

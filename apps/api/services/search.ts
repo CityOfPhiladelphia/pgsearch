@@ -10,7 +10,6 @@ export interface VectorCandidate {
   segment_id: string
   document_id: string
   body: string
-  body_length: number
   segment_index: number
   content_hash: string
   similarity: number
@@ -61,7 +60,7 @@ export interface HybridSearchOptions {
 // parameterized) and validated as an integer.
 export function vectorCandidatesSql(dims: number): string {
   if (!Number.isInteger(dims) || dims <= 0) throw new Error(`invalid embedding dimensions: ${dims}`)
-  return `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.segment_index, s.content_hash,
+  return `SELECT s.segment_id, s.document_id, s.body, s.segment_index, s.content_hash,
             1 - ((s.embedding)::vector(${dims}) <=> $1::vector) AS similarity
      FROM search_segments s
      WHERE s.index_id = $2
@@ -99,7 +98,6 @@ export async function vectorCandidates(
     segment_id: row.segment_id,
     document_id: row.document_id,
     body: row.body,
-    body_length: parseInt(row.body_length, 10),
     segment_index: parseInt(row.segment_index, 10),
     content_hash: row.content_hash,
     similarity: parseFloat(row.similarity),

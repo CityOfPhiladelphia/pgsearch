@@ -15,12 +15,6 @@ const SEPARATORS = ['\n\n', '\n', '. ', ' ', '']
 export const estimateTokens = (text: string): number =>
   Math.ceil(Buffer.byteLength(text, 'utf8') / BYTES_PER_TOKEN)
 
-// Whitespace word count, used for BM25 length normalization — not for chunk sizing.
-export function wordCount(text: string): number {
-  const trimmed = text.trim()
-  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length
-}
-
 export function chunkText(text: string, maxTokens: number): string[] {
   return pack(splitToFit(text, maxTokens, SEPARATORS), maxTokens)
 }

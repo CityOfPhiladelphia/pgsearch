@@ -39,7 +39,6 @@ export interface SearchDocument {
   external_id: string
   title: string
   title_tsvector: string | null
-  title_length: number
   kind: string | null
   metadata: Record<string, unknown>
   segment_count: number
@@ -56,7 +55,6 @@ export interface SearchSegment {
   content_hash: string
   embedding: number[] | null
   body_tsvector: string | null
-  body_length: number
   created_at: string
 }
 
