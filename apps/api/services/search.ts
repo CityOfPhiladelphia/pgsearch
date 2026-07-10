@@ -18,6 +18,34 @@ export interface VectorCandidate {
 
 export type SearchMode = 'hybrid' | 'bm25' | 'semantic'
 
+export interface FusedCandidate {
+  score: number
+  bm25Rank: number | null
+  vectorRank: number | null
+  bm25Score: number
+  vectorScore: number
+  external_id: string
+}
+
+// Orders fused results. Beyond the RRF score: candidates found by both passes carry
+// more evidence than single-pass ties, and among single-pass ties the vector side wins —
+// a keyword-only candidate invisible to the vector pass usually matched incidental body
+// terms, while a vector-only candidate lacking term overlap is the vocabulary mismatch
+// the vector pass exists to bridge. external_id last, so ordering is total and stable
+// across runs.
+export function fusionOrder(a: FusedCandidate, b: FusedCandidate): number {
+  if (b.score !== a.score) return b.score - a.score
+  const passesA = (a.bm25Rank != null ? 1 : 0) + (a.vectorRank != null ? 1 : 0)
+  const passesB = (b.bm25Rank != null ? 1 : 0) + (b.vectorRank != null ? 1 : 0)
+  if (passesB !== passesA) return passesB - passesA
+  const vectorA = a.vectorRank != null ? 1 : 0
+  const vectorB = b.vectorRank != null ? 1 : 0
+  if (vectorB !== vectorA) return vectorB - vectorA
+  if (b.bm25Score !== a.bm25Score) return b.bm25Score - a.bm25Score
+  if (b.vectorScore !== a.vectorScore) return b.vectorScore - a.vectorScore
+  return a.external_id < b.external_id ? -1 : a.external_id > b.external_id ? 1 : 0
+}
+
 export interface HybridSearchOptions {
   limit?: number
   mode?: SearchMode
@@ -226,12 +254,12 @@ export async function hybridSearch(
   // Compute RRF score for each segment
   const scored = segments
     .map(s => {
-      const bm25Rank = bm25RankMap.get(s.segment_id)
-      const vectorRank = vectorRankMap.get(s.segment_id)
+      const bm25Rank = bm25RankMap.get(s.segment_id) ?? null
+      const vectorRank = vectorRankMap.get(s.segment_id) ?? null
       // Segments excluded by both score floors are dropped
       if (bm25Rank == null && vectorRank == null) return null
-      const score = computeRRF({ bm25Rank, vectorRank, k: rrfK, weights: rrfWeights })
-      return { ...s, score }
+      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights })
+      return { ...s, score, bm25Rank, vectorRank }
     })
     .filter((s): s is NonNullable<typeof s> => s != null)
 
@@ -251,7 +279,7 @@ export async function hybridSearch(
 
   const capped: typeof scored = []
   for (const [, list] of byDoc) {
-    list.sort((a, b) => b.score - a.score)
+    list.sort(fusionOrder)
     capped.push(...list.slice(0, maxChunksPerDoc))
   }
 
@@ -260,7 +288,7 @@ export async function hybridSearch(
   // highest-scored copy. Segment content hashes make the comparison exact.
   const seenHashes = new Set<string>()
   const collapsed = capped
-    .sort((a, b) => b.score - a.score)
+    .sort(fusionOrder)
     .filter(s => {
       if (seenHashes.has(s.content_hash)) return false
       seenHashes.add(s.content_hash)

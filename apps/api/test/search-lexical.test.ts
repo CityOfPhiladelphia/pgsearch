@@ -80,7 +80,10 @@ describe('lexical pass', () => {
   it('fuses with the vector pass in hybrid mode', async () => {
     const response = await search('trash collection', { mode: 'hybrid' })
     expect(response.results.length).toBeGreaterThan(0)
-    expect(response.results[0].external_id).toBe('title-hit')
+    // The keyword rank-1 can be tie-beaten only by the vector rank-1 (both score
+    // 1/(k+1) and single-pass ties prefer the vector side), so top 2 at worst.
+    const ids = response.results.slice(0, 2).map(r => r.external_id)
+    expect(ids).toContain('title-hit')
     const scores = response.results.map(r => r.score)
     expect([...scores].sort((a, b) => b - a)).toEqual(scores)
   })
