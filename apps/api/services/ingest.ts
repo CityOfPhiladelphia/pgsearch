@@ -7,7 +7,6 @@ import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
 import { chunkText, wordCount } from './chunk'
-import { documentTermSet, documentStats, applyMaintenance } from './stats'
 
 interface IngestConfigOverrides {
   max_segments_per_document?: number
@@ -55,7 +54,6 @@ export async function ingestDocument(
     [indexId, request.external_id],
   )
   const existingDocumentId: string | undefined = existingDoc.rows[0]?.document_id
-  const oldTitle: string | undefined = existingDoc.rows[0]?.title
 
   const existingHashes = new Set<string>()
   if (existingDocumentId) {
@@ -98,14 +96,6 @@ export async function ingestDocument(
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-
-      // Capture pre-update state for incremental stat maintenance
-      let oldTerms: string[] = []
-      let oldStats = { titleLength: 0, bodyLength: 0, segments: 0 }
-      if (existingDocumentId) {
-        oldTerms = await documentTermSet(client, existingDocumentId)
-        oldStats = await documentStats(client, existingDocumentId)
-      }
 
       // Upsert document
       const upsertResult = await client.query(
@@ -180,26 +170,6 @@ export async function ingestDocument(
           [indexId]
         )
       }
-      await client.query(
-        'UPDATE search_indexes SET docs_changed_since_refresh = docs_changed_since_refresh + 1 WHERE index_id = $1',
-        [indexId]
-      )
-
-      // Apply incremental BM25 stat maintenance (DF + length averages)
-      const titleUnchanged = existingDocumentId !== undefined && oldTitle === request.title
-      const segmentsUnchanged = changed.size === 0 && removedHashes.length === 0
-      if (!(titleUnchanged && segmentsUnchanged)) {
-        const newTerms = await documentTermSet(client, documentId)
-        const newStats = await documentStats(client, documentId)
-        await applyMaintenance(client, {
-          indexId,
-          oldTerms,
-          newTerms,
-          deltaTitle: newStats.titleLength - oldStats.titleLength,
-          deltaBody: newStats.bodyLength - oldStats.bodyLength,
-          deltaSegments: newStats.segments - oldStats.segments,
-        })
-      }
 
       await client.query('COMMIT')
 
@@ -225,11 +195,9 @@ export async function deleteDocument(
   indexId: number,
   externalId: string,
 ): Promise<void> {
-  // Unlike ingestDocument this is not wrapped in withDeadlockRetry: both paths
-  // take the search_indexes row lock (the total_documents UPDATE below) before
-  // writing term_document_frequencies, so writes to one index serialize on that
-  // row and an ingest/delete deadlock cannot form. Keep the UPDATE ahead of
-  // applyMaintenance to preserve that ordering.
+  // Unlike ingestDocument this is not wrapped in withDeadlockRetry: writes to one
+  // index serialize on the search_indexes row lock (the total_documents UPDATE),
+  // so an ingest/delete deadlock cannot form.
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -240,26 +208,12 @@ export async function deleteDocument(
     if (found.rows.length === 0) { await client.query('COMMIT'); return }
     const documentId = found.rows[0].document_id
 
-    const oldTerms = await documentTermSet(client, documentId)
-    const oldStats = await documentStats(client, documentId)
-
     await client.query('DELETE FROM search_documents WHERE document_id = $1', [documentId]) // segments cascade
 
     await client.query(
-      `UPDATE search_indexes
-       SET total_documents = total_documents - 1,
-           docs_changed_since_refresh = docs_changed_since_refresh + 1
-       WHERE index_id = $1`,
+      'UPDATE search_indexes SET total_documents = total_documents - 1 WHERE index_id = $1',
       [indexId],
     )
-    await applyMaintenance(client, {
-      indexId,
-      oldTerms,
-      newTerms: [],
-      deltaTitle: -oldStats.titleLength,
-      deltaBody: -oldStats.bodyLength,
-      deltaSegments: -oldStats.segments,
-    })
 
     await client.query('COMMIT')
   } catch (err) {

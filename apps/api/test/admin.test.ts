@@ -1,5 +1,5 @@
-// ABOUTME: Route tests for the admin reconcile and pg_cron-status endpoints.
-// ABOUTME: Verifies reconcile 200/404 and that pgcron-status reports a not-installed DB.
+// ABOUTME: Route tests for the admin pg_cron-status and key-minting endpoints.
+// ABOUTME: Verifies pgcron-status reports a not-installed DB and search-key rotation 201/404.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
 import { Hono } from 'hono'
@@ -11,7 +11,7 @@ import { adminRoutes } from '../routes/admin'
 const app = new Hono()
 app.route('/', adminRoutes)
 
-describe('admin reconcile route', () => {
+describe('admin routes', () => {
   let pool: Pool
 
   beforeAll(async () => {
@@ -35,28 +35,6 @@ describe('admin reconcile route', () => {
 
   afterEach(async () => {
     await cleanupTestData()
-  })
-
-  it('returns 200 with { status: "reconciled" } for an existing index', async () => {
-    await createIndex(pool, { name: 'reconcile-test' })
-
-    const res = await app.request('/private/key/admin/indexes/reconcile-test/reconcile', {
-      method: 'POST',
-    })
-
-    expect(res.status).toBe(200)
-    const body = await res.json() as { status: string }
-    expect(body.status).toBe('reconciled')
-  })
-
-  it('returns 404 for a missing index', async () => {
-    const res = await app.request('/private/key/admin/indexes/does-not-exist/reconcile', {
-      method: 'POST',
-    })
-
-    expect(res.status).toBe(404)
-    const body = await res.json() as { error: { code: string } }
-    expect(body.error.code).toBe('NOT_FOUND')
   })
 
   it('pgcron-status reports not-installed on a DB without pg_cron', async () => {

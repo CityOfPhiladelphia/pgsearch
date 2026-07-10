@@ -43,10 +43,6 @@ export class PgsearchClient {
     await this.request('DELETE', `/admin/indexes/${name}`, { auth: 'admin' })
   }
 
-  async reconcileIndex(name: string): Promise<void> {
-    await this.request('POST', `/admin/indexes/${name}/reconcile`, { auth: 'admin' })
-  }
-
   // Ingest operations
   async ingest(indexName: string, document: IngestRequest, indexKey: string): Promise<IngestResponse> {
     return this.request('POST', `/index/${indexName}/documents`, { body: document, headers: { 'x-index-key': indexKey } })

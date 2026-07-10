@@ -26,7 +26,7 @@ describe('ingest service', () => {
   afterEach(async () => {
     await pool.query('DELETE FROM search_segments WHERE index_id = $1', [indexId])
     await pool.query('DELETE FROM search_documents WHERE index_id = $1', [indexId])
-    await pool.query("UPDATE search_indexes SET total_documents = 0, docs_changed_since_refresh = 0 WHERE index_id = $1", [indexId])
+    await pool.query("UPDATE search_indexes SET total_documents = 0 WHERE index_id = $1", [indexId])
   })
 
   it('ingests a document and creates segments', async () => {

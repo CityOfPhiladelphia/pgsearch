@@ -7,8 +7,6 @@ import { mergeConfig, DEFAULT_CONFIG } from '../config'
 describe('config', () => {
   it('returns full defaults when no overrides provided', () => {
     const config = mergeConfig({})
-    expect(config.bm25_k1).toBe(1.2)
-    expect(config.bm25_b).toBe(0.75)
     expect(config.field_weights).toEqual({ title: 3.0, body: 1.0 })
     expect(config.rrf_k).toBe(60)
     expect(config.rrf_weights).toEqual({ bm25: 1.0, vector: 1.0 })
@@ -20,10 +18,9 @@ describe('config', () => {
   })
 
   it('merges partial overrides with defaults', () => {
-    const config = mergeConfig({ bm25_k1: 1.5, rrf_k: 30 })
-    expect(config.bm25_k1).toBe(1.5)
+    const config = mergeConfig({ rrf_k: 30 })
     expect(config.rrf_k).toBe(30)
-    expect(config.bm25_b).toBe(0.75) // default preserved
+    expect(config.min_vector_score).toBe(0) // default preserved
   })
 
   it('merges nested embedding config', () => {

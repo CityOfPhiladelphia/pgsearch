@@ -3,7 +3,6 @@
 
 import { Hono } from 'hono'
 import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
-import { reconcileIndex } from '../services/reconcile'
 import { pgCronStatus } from '../services/pgcron'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
@@ -53,14 +52,6 @@ adminRoutes.delete('/private/key/admin/indexes/:name', withPool(async ({ pool },
   const deleted = await deleteIndex(pool, name)
   if (!deleted) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ deleted: true })
-}))
-
-adminRoutes.post('/private/key/admin/indexes/:name/reconcile', withPool(async ({ pool }, c) => {
-  const name = c.req.param('name')!
-  const index = await getIndex(pool, name)
-  if (!index) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-  await reconcileIndex(pool, index.index_id)
-  return c.json({ status: 'reconciled' })
 }))
 
 adminRoutes.get('/private/key/admin/pgcron-status', withPool(async ({ pool }, c) => {

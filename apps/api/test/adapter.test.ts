@@ -9,8 +9,6 @@ function configWith(provider: string): IndexConfig {
   return {
     embedding: { provider, model: 'some-model', dimensions: 384 },
     text_search_config: 'english',
-    bm25_k1: 1.2,
-    bm25_b: 0.75,
     field_weights: { title: 3.0, body: 1.0 },
     rrf_k: 60,
     rrf_weights: { bm25: 1.0, vector: 1.0 },

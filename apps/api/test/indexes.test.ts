@@ -29,8 +29,8 @@ describe('indexes service', () => {
     await createIndex(pool, { name: 'defaults-test' })
     const index = await getIndex(pool, 'defaults-test')
     expect(index).not.toBeNull()
-    expect(index!.config.bm25_k1).toBe(1.2)
     expect(index!.config.rrf_k).toBe(60)
+    expect(index!.config.field_weights).toEqual({ title: 3.0, body: 1.0 })
   })
 
   it('returns null on duplicate index names', async () => {
@@ -61,10 +61,10 @@ describe('indexes service', () => {
 
   it('updates index config with deep merge', async () => {
     await createIndex(pool, { name: 'to-update' })
-    const updated = await updateIndex(pool, 'to-update', { bm25_k1: 2.0 })
+    const updated = await updateIndex(pool, 'to-update', { rrf_k: 30 })
     expect(updated).not.toBeNull()
-    expect(updated!.config.bm25_k1).toBe(2.0)
-    expect(updated!.config.bm25_b).toBe(0.75) // unchanged default preserved
+    expect(updated!.config.rrf_k).toBe(30)
+    expect(updated!.config.min_vector_score).toBe(0) // unchanged default preserved
   })
 
   it('updates nested config without losing sibling fields', async () => {

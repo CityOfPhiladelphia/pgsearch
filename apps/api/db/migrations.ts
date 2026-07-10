@@ -197,4 +197,33 @@ END
 $mig$;
 `,
   },
+  {
+    version: 5,
+    description: 'Lexical scoring in SQL: drop BM25F statistics (term frequencies, running sums, reconcile job)',
+    sql: `
+-- The reconcile job only exists where pg_cron does; statements inside the inner
+-- branch are only planned when the extension is present, keeping this portable.
+DO $mig$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'reconcile-index-stats') THEN
+      PERFORM cron.unschedule('reconcile-index-stats');
+    END IF;
+  END IF;
+END
+$mig$;
+
+DROP FUNCTION IF EXISTS reconcile_index_stats(INTEGER);
+DROP TABLE IF EXISTS term_document_frequencies;
+
+ALTER TABLE search_indexes
+  DROP COLUMN IF EXISTS avg_title_length,
+  DROP COLUMN IF EXISTS avg_body_length,
+  DROP COLUMN IF EXISTS total_title_length,
+  DROP COLUMN IF EXISTS total_body_length,
+  DROP COLUMN IF EXISTS total_segments,
+  DROP COLUMN IF EXISTS last_refreshed_at,
+  DROP COLUMN IF EXISTS docs_changed_since_refresh;
+`,
+  },
 ]

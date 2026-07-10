@@ -10,10 +10,6 @@ CREATE TABLE IF NOT EXISTS search_indexes (
     index_key_hash      TEXT NOT NULL,
     search_key_hash     TEXT NOT NULL,
     total_documents     INTEGER NOT NULL DEFAULT 0,
-    avg_title_length    FLOAT NOT NULL DEFAULT 0,
-    avg_body_length     FLOAT NOT NULL DEFAULT 0,
-    last_refreshed_at   TIMESTAMPTZ,
-    docs_changed_since_refresh INTEGER NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -51,33 +47,6 @@ CREATE TABLE IF NOT EXISTS search_segments (
 CREATE INDEX IF NOT EXISTS idx_segments_body_tsvector ON search_segments USING GIN (body_tsvector);
 CREATE INDEX IF NOT EXISTS idx_segments_document_id ON search_segments (document_id);
 CREATE INDEX IF NOT EXISTS idx_segments_index_id ON search_segments (index_id);
-
--- Materialized view for IDF computation.
--- Computes document frequency per term per index (how many documents contain each term).
-CREATE MATERIALIZED VIEW IF NOT EXISTS term_document_frequencies AS
-SELECT
-    sub.index_id,
-    sub.term,
-    COUNT(DISTINCT sub.document_id)::INTEGER AS document_frequency
-FROM (
-    SELECT
-        d.index_id,
-        d.document_id,
-        unnest(tsvector_to_array(s.body_tsvector)) AS term
-    FROM search_documents d
-    JOIN search_segments s ON s.document_id = d.document_id
-    WHERE s.body_tsvector IS NOT NULL
-    UNION
-    SELECT
-        d.index_id,
-        d.document_id,
-        unnest(tsvector_to_array(d.title_tsvector)) AS term
-    FROM search_documents d
-    WHERE d.title_tsvector IS NOT NULL
-) sub
-GROUP BY sub.index_id, sub.term;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
 
 -- RAG support: nullable hash enables/disables RAG per index; null means RAG is disabled.
 ALTER TABLE search_indexes

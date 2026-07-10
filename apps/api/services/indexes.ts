@@ -12,7 +12,6 @@ function rowToIndex(row: any): SearchIndex {
     config: typeof row.config === 'string' ? JSON.parse(row.config) : row.config,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
-    last_refreshed_at: row.last_refreshed_at ? row.last_refreshed_at.toISOString() : null,
   }
 }
 

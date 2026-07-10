@@ -4,8 +4,6 @@
 export interface IndexConfig {
   text_search_config: string
   embedding: EmbeddingConfig
-  bm25_k1: number
-  bm25_b: number
   field_weights: { title: number; body: number }
   rrf_k: number
   rrf_weights: { bm25: number; vector: number }
@@ -30,10 +28,6 @@ export interface SearchIndex {
   search_key_hash: string
   rag_key_hash: string | null
   total_documents: number
-  avg_title_length: number
-  avg_body_length: number
-  last_refreshed_at: string | null
-  docs_changed_since_refresh: number
   created_at: string
   updated_at: string
 }

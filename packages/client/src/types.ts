@@ -4,8 +4,6 @@
 export interface IndexConfig {
   text_search_config?: string
   embedding?: { provider?: string; model?: string; dimensions?: number }
-  bm25_k1?: number
-  bm25_b?: number
   field_weights?: { title?: number; body?: number }
   rrf_k?: number
   rrf_weights?: { bm25?: number; vector?: number }
