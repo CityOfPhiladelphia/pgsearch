@@ -1,4 +1,4 @@
-// ABOUTME: Integration tests for the SQL-ranked lexical pass variant (ts_rank_cd with weighted tsvectors).
+// ABOUTME: Integration tests for the SQL-ranked lexical pass (ts_rank_cd with weighted tsvectors).
 // ABOUTME: Verifies keyword relevance ordering, title-over-body weighting, and fusion compatibility.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -10,17 +10,14 @@ import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
 
-describe('tsrank lexical variant', () => {
+describe('lexical pass', () => {
   let pool: Pool
   let indexId: number
   const adapter = createTestAdapter(384)
   const config = mergeConfig({})
 
   const search = async (queryText: string, options: HybridSearchOptions = {}) =>
-    hybridSearch(pool, (await getIndex(pool, 'tsrank-test'))!, adapter, queryText, {
-      lexical: 'tsrank',
-      ...options,
-    })
+    hybridSearch(pool, (await getIndex(pool, 'tsrank-test'))!, adapter, queryText, options)
 
   beforeAll(async () => {
     await setupSchema()
@@ -93,10 +90,4 @@ describe('tsrank lexical variant', () => {
     expect(response.results).toEqual([])
   })
 
-  it('defaults to the bm25f scorer when lexical is unset', async () => {
-    const index = (await getIndex(pool, 'tsrank-test'))!
-    const response = await hybridSearch(pool, index, adapter, 'trash', { mode: 'bm25' })
-    const ids = response.results.map(r => r.external_id)
-    expect(ids.indexOf('title-hit')).toBeLessThan(ids.indexOf('body-hit'))
-  })
 })

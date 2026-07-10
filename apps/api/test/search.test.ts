@@ -1,4 +1,4 @@
-// ABOUTME: Integration tests for hybrid search combining BM25F keyword scoring and vector similarity.
+// ABOUTME: Integration tests for hybrid search combining SQL-ranked keyword scoring and vector similarity.
 // ABOUTME: Tests vector retrieval, RRF fusion, score floors, and document deduplication.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'

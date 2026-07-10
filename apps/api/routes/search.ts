@@ -4,7 +4,7 @@
 import { Hono } from 'hono'
 import { searchAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
-import { hybridSearch, type LexicalScorer, type SearchMode } from '../services/search'
+import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getAdapter } from '../services/adapter'
 import type { AppEnv } from '../types'
@@ -24,12 +24,7 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   const validModes: SearchMode[] = ['hybrid', 'bm25', 'semantic']
   if (modeParam && !validModes.includes(modeParam)) return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
 
-  // Undocumented lexical scorer selector for the ts_rank_cd relevance experiment (pgsearch-qpp).
-  const lexicalParam = c.req.query('lexical') as LexicalScorer | undefined
-  const validLexical: LexicalScorer[] = ['bm25f', 'tsrank']
-  if (lexicalParam && !validLexical.includes(lexicalParam)) return apiError(c, 'VALIDATION_ERROR', `lexical must be one of: ${validLexical.join(', ')}`)
-
   const adapter = getAdapter(index.config)
-  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, lexical: lexicalParam })
+  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam })
   return c.json(results, 200)
 }))
