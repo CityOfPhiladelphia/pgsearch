@@ -22,7 +22,7 @@ describe('duplicate content collapse', () => {
   beforeAll(async () => {
     await setupSchema()
     pool = await getTestPool()
-    await createIndex(pool, { name: 'dedup-test' })
+    await createIndex(pool, { name: 'dedup-test', config: { embedding: { dimensions: 384 } } as any })
     const row = await pool.query("SELECT index_id FROM search_indexes WHERE name = 'dedup-test'")
     indexId = row.rows[0].index_id
 

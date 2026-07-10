@@ -7,6 +7,7 @@ import { mergeConfig, DEFAULT_CONFIG } from '../config'
 describe('config', () => {
   it('returns full defaults when no overrides provided', () => {
     const config = mergeConfig({})
+    expect(config.embedding).toEqual({ provider: 'bedrock', model: 'amazon.titan-embed-text-v2:0', dimensions: 1024 })
     expect(config.field_weights).toEqual({ title: 3.0, body: 1.0 })
     expect(config.rrf_k).toBe(60)
     expect(config.rrf_weights).toEqual({ bm25: 1.0, vector: 1.0 })
@@ -33,11 +34,11 @@ describe('config', () => {
 
   it('merges partial embedding config preserving defaults', () => {
     const config = mergeConfig({
-      embedding: { provider: 'bedrock' } as any
+      embedding: { dimensions: 512 } as any
     })
-    expect(config.embedding.provider).toBe('bedrock')
-    expect(config.embedding.model).toBe('all-MiniLM-L6-v2') // default preserved
-    expect(config.embedding.dimensions).toBe(384) // default preserved
+    expect(config.embedding.provider).toBe('bedrock') // default preserved
+    expect(config.embedding.model).toBe('amazon.titan-embed-text-v2:0') // default preserved
+    expect(config.embedding.dimensions).toBe(512)
   })
 
   it('merges partial rrf_weights preserving defaults', () => {

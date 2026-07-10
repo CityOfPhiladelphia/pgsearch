@@ -22,7 +22,7 @@ describe('lexical pass', () => {
   beforeAll(async () => {
     await setupSchema()
     pool = await getTestPool()
-    await createIndex(pool, { name: 'tsrank-test' })
+    await createIndex(pool, { name: 'tsrank-test', config: { embedding: { dimensions: 384 } } as any })
     const row = await pool.query("SELECT index_id FROM search_indexes WHERE name = 'tsrank-test'")
     indexId = row.rows[0].index_id
 

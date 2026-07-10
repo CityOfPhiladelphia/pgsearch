@@ -71,8 +71,8 @@ describe('indexes service', () => {
     await createIndex(pool, { name: 'nested-update' })
     const updated = await updateIndex(pool, 'nested-update', { embedding: { model: 'new-model' } } as any)
     expect(updated!.config.embedding.model).toBe('new-model')
-    expect(updated!.config.embedding.provider).toBe('local') // default preserved
-    expect(updated!.config.embedding.dimensions).toBe(384) // default preserved
+    expect(updated!.config.embedding.provider).toBe('bedrock') // default preserved
+    expect(updated!.config.embedding.dimensions).toBe(1024) // default preserved
   })
 
   it('updateIndex returns null for missing index', async () => {

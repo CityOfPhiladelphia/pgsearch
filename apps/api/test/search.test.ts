@@ -24,7 +24,7 @@ describe('search', () => {
   beforeAll(async () => {
     await setupSchema()
     pool = await getTestPool()
-    const result = await createIndex(pool, { name: 'search-test' })
+    const result = await createIndex(pool, { name: 'search-test', config: { embedding: { dimensions: 384 } } as any })
     const row = await pool.query("SELECT index_id FROM search_indexes WHERE name = 'search-test'")
     indexId = row.rows[0].index_id
 

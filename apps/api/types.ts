@@ -15,7 +15,7 @@ export interface IndexConfig {
 }
 
 export interface EmbeddingConfig {
-  provider: 'bedrock' | 'local'
+  provider: 'bedrock'
   model: string
   dimensions: number
 }

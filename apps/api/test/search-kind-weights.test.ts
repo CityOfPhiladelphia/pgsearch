@@ -27,7 +27,7 @@ describe('kind weighting', () => {
     pool = await getTestPool()
     await createIndex(pool, {
       name: 'kind-weights-test',
-      config: { kind_weights: { reports: 0.5 } },
+      config: { kind_weights: { reports: 0.5 }, embedding: { dimensions: 384 } as any },
     })
     const row = await pool.query("SELECT index_id FROM search_indexes WHERE name = 'kind-weights-test'")
     indexId = row.rows[0].index_id

@@ -122,7 +122,7 @@ This gives the embedding model document-level context even for body segments tha
 
 Only changed segments are re-embedded on upsert. Each segment is SHA256-hashed by content; unchanged segments retain their existing embeddings.
 
-> **Note:** The default config specifies `provider: 'local'` which is not implemented at runtime — the adapter factory only supports `'bedrock'`. Production indexes must specify `bedrock` as the embedding provider in their config.
+> **Note:** The default embedding config is Bedrock Titan Embed v2 at 1024 dimensions — an index created with no config overrides is production-usable as-is.
 
 ---
 

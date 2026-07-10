@@ -4,9 +4,9 @@
 import type { IndexConfig, EmbeddingConfig } from './types'
 
 const DEFAULT_EMBEDDING: EmbeddingConfig = {
-  provider: 'local',
-  model: 'all-MiniLM-L6-v2',
-  dimensions: 384,
+  provider: 'bedrock',
+  model: 'amazon.titan-embed-text-v2:0',
+  dimensions: 1024,
 }
 
 export const DEFAULT_CONFIG: IndexConfig = {
