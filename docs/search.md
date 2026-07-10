@@ -67,6 +67,8 @@ These are design decisions baked into pgsearch and why they were made:
 
 - **One result per document by default** — the best-scoring segment wins. The internal `maxChunksPerDoc` knob lifts this cap (used by RAG to pull multiple sections from a source); the search route always uses the default of 1.
 
+- **Identical content returns once** — civic sites routinely publish the same page under multiple URLs (category paths, tracking parameters). Results whose segments carry the same content hash are collapsed to the highest-scored copy, so mirror pages never occupy multiple result slots and RAG never receives the same chunk twice.
+
 - **Segment size (~1000-token budget)** — the chunker sizes segments by a byte-based token estimate (`ceil(UTF-8 bytes / 3)`), which upper-bounds real embedding tokens without local tokenization. Balances embedding quality with context preservation. Configurable via `max_segment_tokens`.
 
 ---

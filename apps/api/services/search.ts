@@ -12,6 +12,7 @@ export interface VectorCandidate {
   body: string
   body_length: number
   segment_index: number
+  content_hash: string
   similarity: number
 }
 
@@ -31,7 +32,7 @@ export interface HybridSearchOptions {
 // parameterized) and validated as an integer.
 export function vectorCandidatesSql(dims: number): string {
   if (!Number.isInteger(dims) || dims <= 0) throw new Error(`invalid embedding dimensions: ${dims}`)
-  return `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.segment_index,
+  return `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.segment_index, s.content_hash,
             1 - ((s.embedding)::vector(${dims}) <=> $1::vector) AS similarity
      FROM search_segments s
      WHERE s.index_id = $2
@@ -71,6 +72,7 @@ export async function vectorCandidates(
     body: row.body,
     body_length: parseInt(row.body_length, 10),
     segment_index: parseInt(row.segment_index, 10),
+    content_hash: row.content_hash,
     similarity: parseFloat(row.similarity),
   }))
 }
@@ -111,7 +113,7 @@ export async function hybridSearch(
   const [bm25Rows, embeddingResults] = await Promise.all([
     runBm25 && tsquery
       ? pool.query(
-          `SELECT s.segment_id, s.document_id, s.body, d.title, d.external_id, d.metadata,
+          `SELECT s.segment_id, s.document_id, s.body, s.content_hash, d.title, d.external_id, d.metadata,
                   ts_rank_cd(ARRAY[$4, 0.2, 0.4, $3]::float4[],
                              setweight(coalesce(d.title_tsvector, ''::tsvector), 'A') ||
                              setweight(coalesce(s.body_tsvector, ''::tsvector), 'D'),
@@ -141,6 +143,7 @@ export async function hybridSearch(
     external_id: string
     title: string
     body: string
+    content_hash: string
     metadata: Record<string, unknown>
     bm25Score: number
     vectorScore: number
@@ -156,6 +159,7 @@ export async function hybridSearch(
       external_id: row.external_id,
       title: row.title,
       body: row.body,
+      content_hash: row.content_hash,
       metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
       bm25Score: parseFloat(row.lex_score),
       vectorScore: 0,
@@ -169,7 +173,7 @@ export async function hybridSearch(
 
   if (vectorOnlyIds.length > 0) {
     const docInfoResult = await pool.query(
-      `SELECT s.segment_id, s.document_id, s.body,
+      `SELECT s.segment_id, s.document_id, s.body, s.content_hash,
               d.title, d.external_id, d.metadata
        FROM search_segments s
        JOIN search_documents d ON d.document_id = s.document_id
@@ -183,6 +187,7 @@ export async function hybridSearch(
         external_id: row.external_id,
         title: row.title,
         body: row.body,
+        content_hash: row.content_hash,
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
         bm25Score: 0,
         vectorScore: 0,
@@ -250,9 +255,19 @@ export async function hybridSearch(
     capped.push(...list.slice(0, maxChunksPerDoc))
   }
 
-  const deduped = capped
+  // Collapse identical content across documents: the same text published at
+  // multiple external_ids (mirror pages) surfaces once, keeping the
+  // highest-scored copy. Segment content hashes make the comparison exact.
+  const seenHashes = new Set<string>()
+  const collapsed = capped
     .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
+    .filter(s => {
+      if (seenHashes.has(s.content_hash)) return false
+      seenHashes.add(s.content_hash)
+      return true
+    })
+
+  const deduped = collapsed.slice(0, limit)
 
   const results: SearchResult[] = deduped.map(s => ({
     external_id: s.external_id,
@@ -264,7 +279,7 @@ export async function hybridSearch(
 
   return {
     results,
-    total: byDoc.size,
+    total: new Set(collapsed.map(s => s.document_id)).size,
     query: queryText,
   }
 }
