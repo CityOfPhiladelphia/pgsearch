@@ -86,4 +86,9 @@ export const migrations: Migration[] = [
     description: 'Baseline schema',
     sql: BASELINE,
   },
+  {
+    version: 6,
+    description: 'Document kind label for result-type weighting',
+    sql: `ALTER TABLE search_documents ADD COLUMN IF NOT EXISTS kind TEXT;`,
+  },
 ]

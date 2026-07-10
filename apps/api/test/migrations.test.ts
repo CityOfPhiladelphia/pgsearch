@@ -11,16 +11,24 @@ describe('migrations', () => {
   beforeAll(async () => { await teardownSchema(); await setupSchema(); pool = await getTestPool() })
   afterAll(async () => { await teardownSchema(); await closePool() })
 
-  it('a fresh database records exactly the baseline version', async () => {
+  it('a fresh database records the baseline and change-set versions', async () => {
     const r = await pool.query('SELECT version FROM schema_migrations ORDER BY version')
-    expect(r.rows.map(row => row.version)).toEqual([5])
+    expect(r.rows.map(row => row.version)).toEqual([5, 6])
   })
 
   it('re-running the migration set is a no-op', async () => {
     resetMigrationState()
     await runMigrations(pool)
     const r = await pool.query('SELECT COUNT(*)::int AS n FROM schema_migrations')
-    expect(r.rows[0].n).toBe(1)
+    expect(r.rows[0].n).toBe(2)
+  })
+
+  it('search_documents has a nullable kind column', async () => {
+    const r = await pool.query(`
+      SELECT data_type, is_nullable FROM information_schema.columns
+      WHERE table_name = 'search_documents' AND column_name = 'kind'
+    `)
+    expect(r.rows).toEqual([{ data_type: 'text', is_nullable: 'YES' }])
   })
 
   it('does not create the pg_cron extension', async () => {
