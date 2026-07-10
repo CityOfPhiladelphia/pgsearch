@@ -108,7 +108,7 @@ Exact KNN is its own ground truth. Capture the ranked `external_id` list for a s
 
 Migrations run on Lambda cold start (`db/migrate.ts`), and that Lambda has a **30-second timeout**. Building an HNSW index over tens of thousands of vectors will not finish inside it. A migration that times out is killed mid-`CREATE INDEX`, rolls back, never records its version, and is retried on the next cold start — with `reservedConcurrentExecutions: 5`, several at once.
 
-The index build belongs off the request path, as a one-shot `pg_cron` job — the same reasoning that put `reconcile_index_stats` there.
+The index build belongs off the request path, as a one-shot `pg_cron` job.
 
 Sizing note: the HNSW index for a `phila-gov`-sized corpus measures ~266 MB, larger than the TOASTed vectors it indexes. The instance needs room to cache it.
 
@@ -116,9 +116,7 @@ Sizing note: the HNSW index for a `phila-gov`-sized corpus measures ~266 MB, lar
 
 ## Known issues
 
-- **The BM25 candidate query takes an arbitrary subset.** `services/search.ts` selects matching segments with `LIMIT 200` and no `ORDER BY`, so for a term matching thousands of segments Postgres returns an arbitrary 200, which are then scored with BM25F in JavaScript. The true top matches can be absent. This is a larger membership problem than ANN approximation, and it makes any before/after relevance comparison noisy until fixed.
-
-- **`last_refreshed_at` and `docs_changed_since_refresh` do not advance** on `phila-gov`, though the `reconcile-index-stats` `pg_cron` job runs daily and reports success. BM25F statistics are maintained incrementally on ingest, so scoring is unaffected; the watermark itself appears not to be updated.
+- **Per-index HNSW expression indexes are created but never used.** `createIndex` builds `idx_segments_embedding_<id>` on `(embedding::vector(dims))`, but `vectorCandidates` orders by `s.embedding <=> $1` without the cast, so the planner cannot match the index — build cost and disk with no query benefit. Wiring the query to the index (with the `ef_search` invariant above) or dropping the creation is tracked in pgsearch-77l.
 
 ## Open questions
 

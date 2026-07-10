@@ -33,9 +33,8 @@ search_indexes
   ├── config (JSONB) — all per-index settings
   ├── index_key_hash, search_key_hash — bcrypt
   ├── rag_key_hash (nullable) — bcrypt; null = RAG disabled for this index
-  ├── total_documents, avg_title_length, avg_body_length — statistics
-  ├── total_title_length, total_body_length, total_segments — running sums for incremental averages
-  └── docs_changed_since_refresh — per-index change counter (legacy; slated for removal in a squash migration)
+  ├── total_documents — document count
+  └── created_at, updated_at
 
 search_documents
   ├── document_id (UUID PK)
@@ -58,9 +57,6 @@ rag_prompts
   ├── content (JSONB) — system, response_format, model, max_tokens, temperature, retrieval
   └── created_at, updated_at
 
-term_document_frequencies (TABLE)
-  ├── index_id, term, document_frequency — PK (index_id, term)
-  └── Maintained incrementally on ingest/delete; rebuilt from source via /reconcile
 ```
 
 `index_id` is denormalized onto `search_segments` to avoid joining through `search_documents` on every search query.
@@ -75,7 +71,7 @@ Each search index gets its own HNSW vector index: `idx_segments_embedding_{index
 
 ## Multi-Tenancy Model
 
-Each index is fully isolated: its own authentication keys, configuration, HNSW vector index, and statistics. Indexes share the same database tables but are partitioned by `index_id`. There is no cross-index query capability.
+Each index is fully isolated: its own authentication keys, configuration, and HNSW vector index. Indexes share the same database tables but are partitioned by `index_id`. There is no cross-index query capability.
 
 ---
 
@@ -85,7 +81,7 @@ Four credentials, three levels:
 
 | Level | Header | Source | Scope |
 |-------|--------|--------|-------|
-| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete, reconcile, mint/revoke RAG keys, rotate search keys) |
+| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete, mint/revoke RAG keys, rotate search keys) |
 | Per-index — write | `x-index-key` | Returned by `createIndex` | Ingest documents into a specific index; manage that index's prompts |
 | Per-index — search | `x-search-key` | Returned by `createIndex` | Query a specific index |
 | Per-index — RAG | `x-rag-key` | Returned by admin `mintRagKey` (lazy) | Invoke RAG synthesis against a specific index |
@@ -199,7 +195,7 @@ HNSW provides better recall at the cost of slower index build time and more memo
 
 ### 3. Reciprocal Rank Fusion (RRF)
 
-BM25F and vector results are independently ranked, then combined using RRF: `score = Σ w / (k + rank)`. This is robust to outlier scores and score distribution differences between retrievers. Trade-off vs. min-max normalization: RRF discards score magnitude, treating all scores as rank positions. For this use case, robustness to weak-signal inflation matters more than preserving magnitude.
+Keyword and vector results are independently ranked, then combined using RRF: `score = Σ w / (k + rank)`. This is robust to outlier scores and score distribution differences between retrievers. Trade-off vs. min-max normalization: RRF discards score magnitude, treating all scores as rank positions. For this use case, robustness to weak-signal inflation matters more than preserving magnitude.
 
 ### 4. WAF body size override
 
@@ -215,7 +211,7 @@ pgsearch/
 │   ├── api/                   # Lambda search service
 │   │   ├── index.ts           # Hono app + Lambda handler
 │   │   ├── routes/            # admin, ingest, search, prompts, rag, health
-│   │   ├── services/          # search, ingest, score, chunk, stats, reconcile,
+│   │   ├── services/          # search, ingest, score, chunk,
 │   │   │                      # indexes, prompts, rag, adapter, llm-adapter
 │   │   ├── middleware/        # auth (index/search/rag), error handling
 │   │   ├── db/                # pool, migrate, migrations

@@ -160,4 +160,4 @@ Use the page's `canonical_url` (extracted by `extractMeta()`) as the `external_i
 
 ### Statistics Maintenance
 
-BM25F scoring relies on term-frequency and average-length statistics. These are maintained incrementally and transactionally on every ingest and delete, so no refresh step is needed after a bulk load. If you suspect the statistics have drifted, `POST /private/key/admin/indexes/<name>/reconcile` rebuilds them from source.
+Keyword scoring reads tsvectors directly at query time, so no statistics refresh is needed after a bulk load — documents are searchable as soon as their ingest transaction commits.

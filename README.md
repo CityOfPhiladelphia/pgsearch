@@ -3,7 +3,7 @@
 
 # pgsearch
 
-PostgreSQL hybrid search + RAG service combining BM25F full-text keyword scoring with pgvector semantic similarity search, layered with a synthesis endpoint that produces grounded answers with inline citations. Multi-tenant — each index has independent configuration, authentication keys, scoring parameters, and prompts. Designed for moderate-scale content (tens of thousands to low hundreds of thousands of documents per index) where operational simplicity matters more than peak throughput.
+PostgreSQL hybrid search + RAG service combining weighted full-text keyword scoring with pgvector semantic similarity search, layered with a synthesis endpoint that produces grounded answers with inline citations. Multi-tenant — each index has independent configuration, authentication keys, scoring parameters, and prompts. Designed for moderate-scale content (tens of thousands to low hundreds of thousands of documents per index) where operational simplicity matters more than peak throughput.
 
 ## Key concepts
 
@@ -28,10 +28,6 @@ curl -X POST https://<api-url>/public/index/my-index/documents \
   -H "x-index-key: $INDEX_KEY" \
   -H "Content-Type: application/json" \
   -d '{"external_id":"page-1","title":"Apply for a Parking Permit","body":"You can apply online..."}'
-
-# Refresh statistics after bulk ingestion
-curl -X POST https://<api-url>/private/key/admin/indexes/my-index/refresh \
-  -H "x-api-key: $ADMIN_KEY"
 
 # Search
 curl "https://<api-url>/public/search/my-index?q=parking+permit" \

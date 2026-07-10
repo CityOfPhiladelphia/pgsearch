@@ -1,5 +1,5 @@
 <!-- ABOUTME: Step-by-step guide for engineers integrating pgsearch into a service. -->
-<!-- ABOUTME: Covers index creation, document ingestion, refresh, and search via curl and the client SDK.  -->
+<!-- ABOUTME: Covers index creation, document ingestion, and search via curl and the client SDK.  -->
 
 # Getting Started with pgsearch
 
@@ -78,22 +78,7 @@ Response:
 
 See [docs/ingestion.md](ingestion.md) for details on how documents are chunked and which parse library is used.
 
-## Step 3: (Optional) Reconcile statistics
-
-BM25F term-frequency and average-length statistics are maintained incrementally and transactionally on every ingest and delete, so no refresh step is required. If you ever suspect the statistics have drifted, rebuild them from source:
-
-```bash
-curl -X POST https://<api-url>/private/key/admin/indexes/my-index/reconcile \
-  -H "x-api-key: $ADMIN_KEY"
-```
-
-Response:
-
-```json
-{"status": "reconciled"}
-```
-
-## Step 4: Search
+## Step 3: Search
 
 ```bash
 curl "https://<api-url>/public/search/my-index?q=parking+permit&limit=10" \
@@ -118,7 +103,7 @@ Response:
 }
 ```
 
-- `score` is a rank-based combination of keyword relevance (BM25F) and semantic similarity (vector) using Reciprocal Rank Fusion.
+- `score` is a rank-based combination of keyword relevance and semantic similarity (vector) using Reciprocal Rank Fusion.
 - `snippet` is the best-matching segment from the document.
 - `total` is the count of unique matching documents before the `limit` is applied — not the length of `results`.
 
@@ -144,9 +129,6 @@ await client.ingest('my-index', {
   body: 'You can apply for a residential parking permit online...',
   metadata: { source_url: 'https://example.com/parking' },
 }, index_key)
-
-// Statistics are maintained automatically; reconcile only if you suspect drift
-await client.reconcileIndex('my-index')
 
 // Search
 const results = await client.search('my-index', 'parking permit', search_key, { limit: 10 })
