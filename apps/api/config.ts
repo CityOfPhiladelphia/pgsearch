@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: IndexConfig = {
   field_weights: { title: 3.0, body: 1.0 },
   rrf_k: 60,
   rrf_weights: { bm25: 1.0, vector: 1.0 },
+  kind_weights: {},
   min_bm25_score: 0,
   min_vector_score: 0,
   max_segment_tokens: 1000,

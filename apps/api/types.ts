@@ -7,6 +7,7 @@ export interface IndexConfig {
   field_weights: { title: number; body: number }
   rrf_k: number
   rrf_weights: { bm25: number; vector: number }
+  kind_weights: Record<string, number>
   min_bm25_score: number
   min_vector_score: number
   max_segment_tokens: number
@@ -39,6 +40,7 @@ export interface SearchDocument {
   title: string
   title_tsvector: string | null
   title_length: number
+  kind: string | null
   metadata: Record<string, unknown>
   segment_count: number
   created_at: string
@@ -62,6 +64,7 @@ export interface IngestRequest {
   external_id: string
   title: string
   body: string
+  kind?: string
   metadata?: Record<string, unknown>
 }
 

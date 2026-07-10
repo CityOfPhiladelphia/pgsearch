@@ -48,6 +48,15 @@ describe('config', () => {
     expect(config.rrf_weights.vector).toBe(1.0) // default preserved
   })
 
+  it('defaults kind_weights to empty (engine has no label opinions)', () => {
+    expect(mergeConfig({}).kind_weights).toEqual({})
+  })
+
+  it('replaces kind_weights wholesale on override', () => {
+    const base = mergeConfig({ kind_weights: { services: 1.2, documents: 0.8 } })
+    expect(mergeConfig({ kind_weights: { posts: 0.9 } }, base).kind_weights).toEqual({ posts: 0.9 })
+  })
+
   it('merges partial field_weights preserving defaults', () => {
     const config = mergeConfig({
       field_weights: { title: 5.0 } as any
