@@ -76,7 +76,7 @@ describe('indexes service', () => {
   })
 
   it('updateIndex returns null for missing index', async () => {
-    const updated = await updateIndex(pool, 'never-existed', { bm25_k1: 2.0 })
+    const updated = await updateIndex(pool, 'never-existed', { rrf_k: 30 })
     expect(updated).toBeNull()
   })
 
