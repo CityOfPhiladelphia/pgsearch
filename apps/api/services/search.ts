@@ -25,22 +25,45 @@ export interface HybridSearchOptions {
   maxChunksPerDoc?: number
 }
 
+// The cast to a dimensioned vector must appear verbatim in ORDER BY: the per-index
+// HNSW indexes are expression indexes on (embedding::vector(dims)), and the planner
+// only matches the identical expression. dims is interpolated (typmods cannot be
+// parameterized) and validated as an integer.
+export function vectorCandidatesSql(dims: number): string {
+  if (!Number.isInteger(dims) || dims <= 0) throw new Error(`invalid embedding dimensions: ${dims}`)
+  return `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.segment_index,
+            1 - ((s.embedding)::vector(${dims}) <=> $1::vector) AS similarity
+     FROM search_segments s
+     WHERE s.index_id = $2
+     ORDER BY (s.embedding)::vector(${dims}) <=> $1::vector
+     LIMIT $3`
+}
+
 export async function vectorCandidates(
   pool: Pool,
   indexId: number,
+  dims: number,
   queryEmbedding: number[],
   limit: number,
 ): Promise<VectorCandidate[]> {
+  const sql = vectorCandidatesSql(dims)
   const embeddingStr = `[${queryEmbedding.join(',')}]`
-  const result = await pool.query(
-    `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.segment_index,
-            1 - (s.embedding <=> $1::vector) AS similarity
-     FROM search_segments s
-     WHERE s.index_id = $2
-     ORDER BY s.embedding <=> $1::vector
-     LIMIT $3`,
-    [embeddingStr, indexId, limit],
-  )
+  const client = await pool.connect()
+  let result
+  try {
+    await client.query('BEGIN')
+    // HNSW returns at most ef_search rows (default 40); it must cover the candidate
+    // limit or the index silently truncates the list — a membership error under RRF.
+    // SET LOCAL scopes it to this transaction, which pooled connections require.
+    await client.query(`SET LOCAL hnsw.ef_search = ${Math.min(Math.max(limit, 40), 1000)}`)
+    result = await client.query(sql, [embeddingStr, indexId, limit])
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 
   return result.rows.map(row => ({
     segment_id: row.segment_id,
@@ -109,7 +132,7 @@ export async function hybridSearch(
 
   let vectorResults: VectorCandidate[] = []
   if (runVector && embeddingResults.length > 0) {
-    vectorResults = await vectorCandidates(pool, indexId, embeddingResults[0], 200)
+    vectorResults = await vectorCandidates(pool, indexId, config.embedding.dimensions, embeddingResults[0], 200)
   }
 
   interface ScoredSegment {

@@ -51,7 +51,7 @@ describe('search', () => {
   describe('vector candidates', () => {
     it('retrieves candidates by vector similarity', async () => {
       const queryEmbedding = (await adapter.embed(['parking permit application']))[0]
-      const candidates = await vectorCandidates(pool, indexId, queryEmbedding, 10)
+      const candidates = await vectorCandidates(pool, indexId, 384, queryEmbedding, 10)
       expect(candidates.length).toBeGreaterThan(0)
       expect(candidates[0]).toHaveProperty('segment_id')
       expect(candidates[0]).toHaveProperty('similarity')
@@ -59,7 +59,7 @@ describe('search', () => {
 
     it('returns results ordered by similarity', async () => {
       const queryEmbedding = (await adapter.embed(['parking permit']))[0]
-      const candidates = await vectorCandidates(pool, indexId, queryEmbedding, 10)
+      const candidates = await vectorCandidates(pool, indexId, 384, queryEmbedding, 10)
       for (let i = 1; i < candidates.length; i++) {
         expect(candidates[i - 1].similarity).toBeGreaterThanOrEqual(candidates[i].similarity)
       }
