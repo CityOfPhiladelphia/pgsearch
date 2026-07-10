@@ -66,7 +66,7 @@ describe('database schema', () => {
     expect(terms).toContain('world')
   })
 
-  it('drops BM25F statistics artifacts (term frequencies table, stats columns)', async () => {
+  it('carries no keyword-statistics artifacts (term frequencies table, stats columns)', async () => {
     const pool = await getTestPool()
     const tdf = await pool.query(`SELECT 1 FROM pg_class WHERE relname = 'term_document_frequencies'`)
     expect(tdf.rows).toHaveLength(0)
@@ -80,7 +80,7 @@ describe('database schema', () => {
   })
 })
 
-describe('migration v2 — rag', () => {
+describe('rag schema', () => {
   beforeAll(async () => {
     await teardownSchema()
     await setupSchema()

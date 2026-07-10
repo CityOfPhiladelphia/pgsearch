@@ -9,7 +9,7 @@ pgsearch runs as a single AWS Lambda function behind API Gateway. The Lambda han
 
 Infrastructure is defined in `cdk/app.ts` using AWS CDK with [phila constructs](https://github.com/CityOfPhiladelphia/phila-ctl). The stack includes API Gateway (with WAF), Lambda, RDS PostgreSQL, Secrets Manager, and supporting IAM/KMS resources.
 
-The Lambda is stateless. Database migrations run idempotently on cold start via `db/migrate.ts` — a versioned migration runner that tracks applied migrations in a `schema_migrations` table.
+The Lambda is stateless. Database migrations run idempotently on cold start via `db/migrate.ts` — a versioned runner that tracks applied versions in a `schema_migrations` table. `db/migrations.ts` holds a declarative **baseline** (the full current schema, applied to fresh databases in one step) followed by imperative **change-set** migrations for every schema change since; when the change-set list grows unwieldy, it is folded into a new baseline stamped with the highest folded version.
 
 ### Deployment
 

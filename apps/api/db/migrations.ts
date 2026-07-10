@@ -1,5 +1,5 @@
-// ABOUTME: Database migration definitions for pgsearch schema evolution.
-// ABOUTME: Each migration is a versioned SQL statement applied once on cold start.
+// ABOUTME: Database schema: a declarative baseline plus imperative change-set migrations.
+// ABOUTME: The baseline applies the full current schema to a fresh database in one step.
 
 export interface Migration {
   version: number
@@ -7,11 +7,14 @@ export interface Migration {
   sql: string
 }
 
-export const migrations: Migration[] = [
-  {
-    version: 1,
-    description: 'Initial schema with search indexes, documents, segments, and term frequency view',
-    sql: `
+// The baseline is the complete schema as of its version and must stay idempotent.
+// Databases that were migrated through the historical v1-v5 chain already record
+// version 5 and skip it; fresh databases apply it in one step.
+//
+// Schema changes are appended below the baseline as imperative migrations
+// (version 6+) describing the delta. When the change-set list grows unwieldy,
+// fold it into a new baseline stamped with the highest folded version.
+const BASELINE = `
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS search_indexes (
@@ -21,11 +24,8 @@ CREATE TABLE IF NOT EXISTS search_indexes (
     config              JSONB NOT NULL DEFAULT '{}',
     index_key_hash      TEXT NOT NULL,
     search_key_hash     TEXT NOT NULL,
+    rag_key_hash        TEXT,
     total_documents     INTEGER NOT NULL DEFAULT 0,
-    avg_title_length    FLOAT NOT NULL DEFAULT 0,
-    avg_body_length     FLOAT NOT NULL DEFAULT 0,
-    last_refreshed_at   TIMESTAMPTZ,
-    docs_changed_since_refresh INTEGER NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -64,39 +64,9 @@ CREATE INDEX IF NOT EXISTS idx_segments_body_tsvector ON search_segments USING G
 CREATE INDEX IF NOT EXISTS idx_segments_document_id ON search_segments (document_id);
 CREATE INDEX IF NOT EXISTS idx_segments_index_id ON search_segments (index_id);
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS term_document_frequencies AS
-SELECT
-    sub.index_id,
-    sub.term,
-    COUNT(DISTINCT sub.document_id)::INTEGER AS document_frequency
-FROM (
-    SELECT
-        d.index_id,
-        d.document_id,
-        unnest(tsvector_to_array(s.body_tsvector)) AS term
-    FROM search_documents d
-    JOIN search_segments s ON s.document_id = d.document_id
-    WHERE s.body_tsvector IS NOT NULL
-    UNION
-    SELECT
-        d.index_id,
-        d.document_id,
-        unnest(tsvector_to_array(d.title_tsvector)) AS term
-    FROM search_documents d
-    WHERE d.title_tsvector IS NOT NULL
-) sub
-GROUP BY sub.index_id, sub.term;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tdf_pk ON term_document_frequencies (index_id, term);
-    `,
-  },
-  {
-    version: 2,
-    description: 'RAG: add rag_key_hash to search_indexes; create rag_prompts',
-    sql: `
-ALTER TABLE search_indexes
-  ADD COLUMN IF NOT EXISTS rag_key_hash TEXT;
-
+-- Stores named prompt templates scoped to an index; a null rag_key_hash on the
+-- index means RAG is disabled. Content is JSONB to support future composition
+-- fields without schema changes.
 CREATE TABLE IF NOT EXISTS rag_prompts (
     prompt_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     index_id    INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
@@ -108,122 +78,12 @@ CREATE TABLE IF NOT EXISTS rag_prompts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rag_prompts_index_id ON rag_prompts (index_id);
-    `,
-  },
-  {
-    version: 3,
-    description: 'Incremental BM25 stats: matview -> table, running-sum columns, reconcile function',
-    sql: `
--- Convert the term-frequency materialized view to a maintained table.
-DROP TABLE IF EXISTS term_document_frequencies_tbl;
-CREATE TABLE term_document_frequencies_tbl (
-  index_id           INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
-  term               TEXT NOT NULL,
-  document_frequency INTEGER NOT NULL,
-  PRIMARY KEY (index_id, term)
-);
-INSERT INTO term_document_frequencies_tbl (index_id, term, document_frequency)
-  SELECT index_id, term, document_frequency FROM term_document_frequencies;
-DROP MATERIALIZED VIEW IF EXISTS term_document_frequencies;
-ALTER TABLE term_document_frequencies_tbl RENAME TO term_document_frequencies;
+`
 
--- Running sums so averages are maintained, not recomputed.
-ALTER TABLE search_indexes
-  ADD COLUMN IF NOT EXISTS total_title_length BIGINT NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS total_body_length  BIGINT NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS total_segments     BIGINT NOT NULL DEFAULT 0;
-
-UPDATE search_indexes si SET
-  total_title_length = COALESCE((SELECT SUM(title_length)  FROM search_documents d WHERE d.index_id = si.index_id), 0),
-  total_segments     = COALESCE((SELECT SUM(segment_count) FROM search_documents d WHERE d.index_id = si.index_id), 0),
-  total_body_length  = COALESCE((SELECT SUM(body_length)   FROM search_segments  s WHERE s.index_id = si.index_id), 0);
-
-UPDATE search_indexes SET
-  avg_title_length = COALESCE(total_title_length::float / NULLIF(total_documents, 0), 0),
-  avg_body_length  = COALESCE(total_body_length::float  / NULLIF(total_segments, 0), 0);
-
--- Cold-path reconcile: recompute DF + sums + averages from source for one index.
-CREATE OR REPLACE FUNCTION reconcile_index_stats(p_index_id INTEGER)
-RETURNS void LANGUAGE plpgsql AS $fn$
-BEGIN
-  DELETE FROM term_document_frequencies WHERE index_id = p_index_id;
-  INSERT INTO term_document_frequencies (index_id, term, document_frequency)
-  SELECT p_index_id, sub.term, COUNT(DISTINCT sub.document_id)::int
-  FROM (
-    SELECT d.document_id, unnest(tsvector_to_array(s.body_tsvector)) AS term
-    FROM search_documents d JOIN search_segments s ON s.document_id = d.document_id
-    WHERE d.index_id = p_index_id AND s.body_tsvector IS NOT NULL
-    UNION
-    SELECT d.document_id, unnest(tsvector_to_array(d.title_tsvector))
-    FROM search_documents d
-    WHERE d.index_id = p_index_id AND d.title_tsvector IS NOT NULL
-  ) sub
-  GROUP BY sub.term;
-
-  UPDATE search_indexes si SET
-    total_title_length = COALESCE((SELECT SUM(title_length)  FROM search_documents d WHERE d.index_id = p_index_id), 0),
-    total_segments     = COALESCE((SELECT SUM(segment_count) FROM search_documents d WHERE d.index_id = p_index_id), 0),
-    total_body_length  = COALESCE((SELECT SUM(body_length)   FROM search_segments  s WHERE s.index_id = p_index_id), 0)
-  WHERE si.index_id = p_index_id;
-
-  UPDATE search_indexes si SET
-    avg_title_length = COALESCE(total_title_length::float / NULLIF(total_documents, 0), 0),
-    avg_body_length  = COALESCE(total_body_length::float  / NULLIF(total_segments, 0), 0)
-  WHERE si.index_id = p_index_id;
-END;
-$fn$;
-`,
-  },
-  {
-    version: 4,
-    description: 'Enable pg_cron and schedule the nightly reconcile_index_stats job (guarded: no-op where pg_cron is not preloaded)',
-    sql: `
--- Only act where pg_cron is actually preloaded (RDS with the custom parameter
--- group). On the dockerized test DB / any env without it, this is a clean no-op,
--- so the migration stays portable. Guarding on shared_preload_libraries (not
--- pg_available_extensions) means we never attempt CREATE EXTENSION before the
--- instance has been rebooted with the new parameter group.
-DO $mig$
-BEGIN
-  IF current_setting('shared_preload_libraries') LIKE '%pg_cron%' THEN
-    CREATE EXTENSION IF NOT EXISTS pg_cron;
-    PERFORM cron.schedule(
-      'reconcile-index-stats',
-      '17 3 * * *',
-      $job$ SELECT reconcile_index_stats(index_id) FROM search_indexes $job$
-    );
-  END IF;
-END
-$mig$;
-`,
-  },
+export const migrations: Migration[] = [
   {
     version: 5,
-    description: 'Lexical scoring in SQL: drop BM25F statistics (term frequencies, running sums, reconcile job)',
-    sql: `
--- The reconcile job only exists where pg_cron does; statements inside the inner
--- branch are only planned when the extension is present, keeping this portable.
-DO $mig$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'reconcile-index-stats') THEN
-      PERFORM cron.unschedule('reconcile-index-stats');
-    END IF;
-  END IF;
-END
-$mig$;
-
-DROP FUNCTION IF EXISTS reconcile_index_stats(INTEGER);
-DROP TABLE IF EXISTS term_document_frequencies;
-
-ALTER TABLE search_indexes
-  DROP COLUMN IF EXISTS avg_title_length,
-  DROP COLUMN IF EXISTS avg_body_length,
-  DROP COLUMN IF EXISTS total_title_length,
-  DROP COLUMN IF EXISTS total_body_length,
-  DROP COLUMN IF EXISTS total_segments,
-  DROP COLUMN IF EXISTS last_refreshed_at,
-  DROP COLUMN IF EXISTS docs_changed_since_refresh;
-`,
+    description: 'Baseline schema',
+    sql: BASELINE,
   },
 ]

@@ -11,7 +11,7 @@ For how ranking works, see [Search Behavior and Tuning](search.md).
 
 ## Why there is no vector index
 
-`schema.sql` declares the column without a dimension:
+The baseline schema (`db/migrations.ts`) declares the column without a dimension:
 
 ```sql
 embedding       VECTOR,
