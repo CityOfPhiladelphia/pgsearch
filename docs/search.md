@@ -77,10 +77,10 @@ GET /public/search/my-index?q=police+report&kind_weights=documents:1.2,services:
 
 The parameter replaces the whole configured map for that request (pass `kind_weights=` pairs for every kind you want weighted). Weights must be `>= 0`.
 
-As a worked example, phila.gov content classifies by URL path into `services`, `departments`, `programs`, `documents`, and `posts`, plus `tools` for interactive applications indexed via shim documents. A gentle palette that keeps actionable pages above archival material looks like:
+As a worked example, phila.gov content classifies by URL path into `services`, `guides`, `departments`, `programs`, `documents`, and `posts` (which absorbs `/news/`, `/press-releases/`, and date-slugged paths), plus `tools` for interactive applications indexed via shim documents. A gentle palette that keeps actionable pages above archival material looks like:
 
 ```json
-{ "kind_weights": { "services": 1.15, "tools": 1.15, "programs": 1.0, "departments": 0.95, "documents": 0.85, "posts": 0.85 } }
+{ "kind_weights": { "services": 1.15, "tools": 1.15, "guides": 1.15, "programs": 1.0, "departments": 0.95, "documents": 0.85, "posts": 0.85 } }
 ```
 
 Start gentle (`0.85`–`1.15`), re-run your evals, and only widen the spread when a stratum still floods results.
