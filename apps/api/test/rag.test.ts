@@ -80,7 +80,6 @@ describe('runRag', () => {
     expect(result.prompt).toBe('navigator')
     expect(result.model).toBe('test-llm')
     expect(result.usage.output_tokens).toBeGreaterThan(0)
-    expect(result.history_sig).toBeNull()
   })
 
   it('marks cited chunks as used=true and uncited as used=false', async () => {

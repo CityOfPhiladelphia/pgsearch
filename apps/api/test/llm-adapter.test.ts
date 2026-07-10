@@ -17,6 +17,6 @@ describe('getLlmAdapter', () => {
   })
 
   it('throws for unsupported model prefixes', () => {
-    expect(() => getLlmAdapter({ ...base, model: 'amazon.titan-text' })).toThrow(/not supported/i)
+    expect(() => getLlmAdapter({ ...base, model: 'amazon.titan-text' })).toThrow(/supports only/i)
   })
 })

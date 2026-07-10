@@ -179,5 +179,4 @@ export interface RagResponse {
   model: string
   prompt: string
   usage: { input_tokens: number; output_tokens: number }
-  history_sig: string | null
 }

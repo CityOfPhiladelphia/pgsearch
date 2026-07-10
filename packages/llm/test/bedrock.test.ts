@@ -85,10 +85,7 @@ describe('createBedrockLlmAdapter', () => {
     expect(result.text).toBe('part one part two')
   })
 
-  it('rejects non-anthropic model IDs with a clear error', async () => {
-    const adapter = createBedrockLlmAdapter({ model: 'amazon.titan-text-v1' })
-    await expect(adapter.complete({
-      system: '', messages: [{ role: 'user', content: 'q' }], max_tokens: 10, temperature: 0,
-    })).rejects.toThrow(/only anthropic\..*/i)
+  it('rejects non-anthropic model IDs at creation with a clear error', () => {
+    expect(() => createBedrockLlmAdapter({ model: 'amazon.titan-text-v1' })).toThrow(/only anthropic\..*/i)
   })
 })

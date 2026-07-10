@@ -100,6 +100,5 @@ export async function runRag(
     model: completion.model,
     prompt: promptName,
     usage: completion.usage,
-    history_sig: null,
   }
 }

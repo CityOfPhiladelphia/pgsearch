@@ -68,7 +68,6 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
     adapter = createBedrockAdapter({
       model: 'amazon.titan-embed-text-v2:0',
       dimensions: 1024,
-      region: 'us-east-1',
     })
   }, 30_000)
 

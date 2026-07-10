@@ -90,8 +90,7 @@ Response:
   ],
   "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "prompt": "support",
-  "usage": { "input_tokens": 2341, "output_tokens": 187 },
-  "history_sig": null
+  "usage": { "input_tokens": 2341, "output_tokens": 187 }
 }
 ```
 

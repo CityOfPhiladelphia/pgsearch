@@ -6,23 +6,22 @@ import type { LlmAdapter, LlmCompleteInput, LlmCompleteResult } from './adapter'
 
 export interface BedrockLlmConfig {
   model: string
-  region?: string
 }
 
 export function createBedrockLlmAdapter(config: BedrockLlmConfig): LlmAdapter {
+  // Accept both raw model IDs (anthropic.foo) and regional inference profile IDs
+  // (us.anthropic.foo, global.anthropic.foo). Newer Claude models require profiles;
+  // older ones can be invoked directly.
+  if (!/^(?:[a-z]+\.)?anthropic\./.test(config.model)) {
+    throw new Error(
+      `Bedrock LLM currently supports only anthropic.* models or <region>.anthropic.* inference profiles; got '${config.model}'`
+    )
+  }
+
   return {
     model: config.model,
     async complete(input: LlmCompleteInput): Promise<LlmCompleteResult> {
-      // Accept both raw model IDs (anthropic.foo) and regional inference profile IDs
-      // (us.anthropic.foo, global.anthropic.foo). Newer Claude models require profiles;
-      // older ones can be invoked directly.
-      if (!/^(?:[a-z]+\.)?anthropic\./.test(config.model)) {
-        throw new Error(
-          `Bedrock LLM currently supports only anthropic.* models or <region>.anthropic.* inference profiles; got '${config.model}'`
-        )
-      }
-
-      const { client, InvokeModelCommand } = await getBedrockClient(config.region)
+      const { client, InvokeModelCommand } = await getBedrockClient()
 
       const response = await client.send(new InvokeModelCommand({
         modelId: config.model,

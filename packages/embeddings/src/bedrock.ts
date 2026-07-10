@@ -7,7 +7,6 @@ import type { EmbeddingAdapter } from './adapter'
 export interface BedrockAdapterConfig {
   model: string
   dimensions: number
-  region?: string
 }
 
 export function createBedrockAdapter(config: BedrockAdapterConfig): EmbeddingAdapter {
@@ -15,7 +14,7 @@ export function createBedrockAdapter(config: BedrockAdapterConfig): EmbeddingAda
     model: config.model,
     dimensions: config.dimensions,
     async embed(texts: string[]): Promise<number[][]> {
-      const { client, InvokeModelCommand } = await getBedrockClient(config.region)
+      const { client, InvokeModelCommand } = await getBedrockClient()
       const results: number[][] = []
       for (const text of texts) {
         const response = await client.send(new InvokeModelCommand({
