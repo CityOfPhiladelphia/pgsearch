@@ -92,6 +92,7 @@ export interface SearchResult {
   score: number
   title: string
   snippet: string
+  kind: string | null
   metadata: Record<string, unknown>
 }
 

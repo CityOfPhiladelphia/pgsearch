@@ -52,6 +52,7 @@ export interface HybridSearchOptions {
   minBm25Score?: number
   minVectorScore?: number
   maxChunksPerDoc?: number
+  kindWeights?: Record<string, number>
 }
 
 // The cast to a dimensioned vector must appear verbatim in ORDER BY: the per-index
@@ -141,7 +142,7 @@ export async function hybridSearch(
   const [bm25Rows, embeddingResults] = await Promise.all([
     runBm25 && tsquery
       ? pool.query(
-          `SELECT s.segment_id, s.document_id, s.body, s.content_hash, d.title, d.external_id, d.metadata,
+          `SELECT s.segment_id, s.document_id, s.body, s.content_hash, d.title, d.external_id, d.kind, d.metadata,
                   ts_rank_cd(ARRAY[$4, 0.2, 0.4, $3]::float4[],
                              setweight(coalesce(d.title_tsvector, ''::tsvector), 'A') ||
                              setweight(coalesce(s.body_tsvector, ''::tsvector), 'D'),
@@ -172,6 +173,7 @@ export async function hybridSearch(
     title: string
     body: string
     content_hash: string
+    kind: string | null
     metadata: Record<string, unknown>
     bm25Score: number
     vectorScore: number
@@ -188,6 +190,7 @@ export async function hybridSearch(
       title: row.title,
       body: row.body,
       content_hash: row.content_hash,
+      kind: row.kind ?? null,
       metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
       bm25Score: parseFloat(row.lex_score),
       vectorScore: 0,
@@ -202,7 +205,7 @@ export async function hybridSearch(
   if (vectorOnlyIds.length > 0) {
     const docInfoResult = await pool.query(
       `SELECT s.segment_id, s.document_id, s.body, s.content_hash,
-              d.title, d.external_id, d.metadata
+              d.title, d.external_id, d.kind, d.metadata
        FROM search_segments s
        JOIN search_documents d ON d.document_id = s.document_id
        WHERE s.segment_id = ANY($1)`,
@@ -216,6 +219,7 @@ export async function hybridSearch(
         title: row.title,
         body: row.body,
         content_hash: row.content_hash,
+        kind: row.kind ?? null,
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
         bm25Score: 0,
         vectorScore: 0,
@@ -235,6 +239,7 @@ export async function hybridSearch(
 
   const rrfK: number = config.rrf_k ?? 60
   const rrfWeights = config.rrf_weights ?? { bm25: 1.0, vector: 1.0 }
+  const kindWeights = options.kindWeights ?? config.kind_weights ?? {}
   const minBm25Score = options.minBm25Score ?? config.min_bm25_score ?? 0
   const minVectorScore = options.minVectorScore ?? config.min_vector_score ?? 0
 
@@ -258,7 +263,11 @@ export async function hybridSearch(
       const vectorRank = vectorRankMap.get(s.segment_id) ?? null
       // Segments excluded by both score floors are dropped
       if (bm25Rank == null && vectorRank == null) return null
-      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights })
+      // The kind multiplier scales the fused score, so under w/(k+r) it acts as
+      // a roughly uniform rank shift (0.85 ≈ ~10 ranks at k=60). Documents with
+      // no kind, and kinds absent from the map, are neutral.
+      const kindWeight = s.kind != null ? kindWeights[s.kind] ?? 1 : 1
+      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights }) * kindWeight
       return { ...s, score, bm25Rank, vectorRank }
     })
     .filter((s): s is NonNullable<typeof s> => s != null)
@@ -302,6 +311,7 @@ export async function hybridSearch(
     score: s.score,
     title: s.title,
     snippet: s.body,
+    kind: s.kind,
     metadata: s.metadata,
   }))
 
