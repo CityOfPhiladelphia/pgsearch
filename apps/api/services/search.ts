@@ -29,6 +29,7 @@ interface BM25Candidate {
 }
 
 export type SearchMode = 'hybrid' | 'bm25' | 'semantic'
+export type LexicalScorer = 'bm25f' | 'tsrank'
 
 export interface HybridSearchOptions {
   limit?: number
@@ -36,6 +37,7 @@ export interface HybridSearchOptions {
   minBm25Score?: number
   minVectorScore?: number
   maxChunksPerDoc?: number
+  lexical?: LexicalScorer
 }
 
 export async function vectorCandidates(
@@ -101,6 +103,7 @@ export async function hybridSearch(
   const indexId = index.index_id
   const limit = options.limit ?? 10
   const mode = options.mode ?? 'hybrid'
+  const lexical = options.lexical ?? 'bm25f'
   const runBm25 = mode !== 'semantic'
   const runVector = mode !== 'bm25'
 
@@ -122,25 +125,48 @@ export async function hybridSearch(
         `SELECT plainto_tsquery($1, $2) AS tsquery`,
         [textSearchConfig, queryText],
       ),
-      stemQueryTerms(pool, queryText, textSearchConfig),
+      lexical === 'bm25f'
+        ? stemQueryTerms(pool, queryText, textSearchConfig)
+        : Promise.resolve([]),
     ])
     tsquery = tsqueryResult.rows[0].tsquery
     queryTerms = terms
   }
 
-  // Run BM25F and vector passes concurrently
+  // The tsrank scorer ranks candidates in SQL before the limit, so the true top
+  // matches always enter the pool; weights map title to the A slot and body to D,
+  // normalized to ts_rank_cd's required [0,1] range (only the ratio affects ranking).
+  const weightScale = Math.max(fieldWeights.title, fieldWeights.body)
+  const lexicalCandidateQuery = lexical === 'tsrank'
+    ? {
+        text: `SELECT s.segment_id, s.document_id, s.body, d.title, d.external_id, d.metadata,
+                      ts_rank_cd(ARRAY[$4, 0.2, 0.4, $3]::float4[],
+                                 setweight(coalesce(d.title_tsvector, ''::tsvector), 'A') ||
+                                 setweight(coalesce(s.body_tsvector, ''::tsvector), 'D'),
+                                 $2, 1) AS lex_score
+               FROM search_segments s
+               JOIN search_documents d ON d.document_id = s.document_id
+               WHERE s.index_id = $1
+                 AND (s.body_tsvector @@ $2 OR d.title_tsvector @@ $2)
+               ORDER BY lex_score DESC
+               LIMIT 200`,
+        values: [indexId, tsquery, fieldWeights.title / weightScale, fieldWeights.body / weightScale],
+      }
+    : {
+        text: `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.body_tsvector,
+                      d.title, d.external_id, d.title_tsvector, d.title_length, d.metadata
+               FROM search_segments s
+               JOIN search_documents d ON d.document_id = s.document_id
+               WHERE s.index_id = $1
+                 AND (s.body_tsvector @@ $2 OR d.title_tsvector @@ $2)
+               LIMIT 200`,
+        values: [indexId, tsquery],
+      }
+
+  // Run lexical and vector passes concurrently
   const [bm25Rows, embeddingResults] = await Promise.all([
     runBm25 && tsquery
-      ? pool.query(
-          `SELECT s.segment_id, s.document_id, s.body, s.body_length, s.body_tsvector,
-                  d.title, d.external_id, d.title_tsvector, d.title_length, d.metadata
-           FROM search_segments s
-           JOIN search_documents d ON d.document_id = s.document_id
-           WHERE s.index_id = $1
-             AND (s.body_tsvector @@ $2 OR d.title_tsvector @@ $2)
-           LIMIT 200`,
-          [indexId, tsquery],
-        )
+      ? pool.query(lexicalCandidateQuery)
       : Promise.resolve({ rows: [] }),
     runVector
       ? adapter.embed([queryText])
@@ -180,29 +206,34 @@ export async function hybridSearch(
 
   const segmentMap = new Map<string, ScoredSegment>()
 
-  // Process BM25F candidates
+  // Process lexical candidates
   for (const row of bm25Rows.rows) {
-    const bodyTf = parseTsvectorTf(row.body_tsvector)
-    const titleTf = parseTsvectorTf(row.title_tsvector)
+    let bm25Score: number
+    if (lexical === 'tsrank') {
+      bm25Score = parseFloat(row.lex_score)
+    } else {
+      const bodyTf = parseTsvectorTf(row.body_tsvector)
+      const titleTf = parseTsvectorTf(row.title_tsvector)
 
-    const termFreqs = queryTerms.map(term => ({
-      term,
-      titleTf: titleTf.get(term) ?? 0,
-      bodyTf: bodyTf.get(term) ?? 0,
-      df: dfMap.get(term) ?? 0,
-    }))
+      const termFreqs = queryTerms.map(term => ({
+        term,
+        titleTf: titleTf.get(term) ?? 0,
+        bodyTf: bodyTf.get(term) ?? 0,
+        df: dfMap.get(term) ?? 0,
+      }))
 
-    const bm25Score = computeBM25F({
-      termFreqs,
-      titleLength: parseInt(row.title_length, 10),
-      bodyLength: parseInt(row.body_length, 10),
-      k1,
-      b,
-      fieldWeights,
-      avgTitleLength,
-      avgBodyLength,
-      totalDocuments,
-    })
+      bm25Score = computeBM25F({
+        termFreqs,
+        titleLength: parseInt(row.title_length, 10),
+        bodyLength: parseInt(row.body_length, 10),
+        k1,
+        b,
+        fieldWeights,
+        avgTitleLength,
+        avgBodyLength,
+        totalDocuments,
+      })
+    }
 
     segmentMap.set(row.segment_id, {
       segment_id: row.segment_id,

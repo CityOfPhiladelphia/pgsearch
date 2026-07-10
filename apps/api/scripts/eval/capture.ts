@@ -50,8 +50,9 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 async function main(): Promise<void> {
   const indexName = process.env.EVAL_INDEX ?? 'phila-gov-en'
   const label = process.argv[2]
+  const extraParams = process.argv[3] ?? ''
   if (!label) {
-    console.error('[capture] usage: tsx capture.ts <label>   (e.g. "baseline-bm25f-exact")')
+    console.error('[capture] usage: tsx capture.ts <label> [extraParams]   (e.g. "variant-tsrank" "lexical=tsrank")')
     process.exit(1)
   }
 
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
   for (const entry of queries) {
     const modes: Record<string, CapturedResult[]> = {}
     for (const mode of MODES) {
-      const url = `${apiBase}/public/search/${indexName}?q=${encodeURIComponent(entry.q)}&limit=${LIMIT}&mode=${mode}`
+      const url = `${apiBase}/public/search/${indexName}?q=${encodeURIComponent(entry.q)}&limit=${LIMIT}&mode=${mode}${extraParams ? `&${extraParams}` : ''}`
       const response = await fetch(url, { headers: { 'x-search-key': searchKey } })
       if (!response.ok) {
         throw new Error(`[capture] ${mode} "${entry.q}" -> ${response.status} ${await response.text()}`)
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
     api_base: apiBase,
     index: indexName,
     limit: LIMIT,
+    extra_params: extraParams,
     queries: captured,
   }
 
