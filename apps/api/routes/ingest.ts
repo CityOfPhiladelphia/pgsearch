@@ -15,6 +15,7 @@ const ingestSchema: Schema = {
   external_id: [['typeof', 'string'], ['nonEmpty']],
   title: [['typeof', 'string'], ['nonEmpty']],
   body: [['typeof', 'string'], ['nonEmpty']],
+  'kind?': [['typeof', 'string'], ['nonEmpty']],
   'metadata?': ['object'],
 }
 

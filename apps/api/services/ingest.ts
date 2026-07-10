@@ -99,14 +99,15 @@ export async function ingestDocument(
 
       // Upsert document
       const upsertResult = await client.query(
-        `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count)
-         VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8)
+        `INSERT INTO search_documents (index_id, external_id, title, title_tsvector, title_length, metadata, segment_count, kind)
+         VALUES ($1, $2, $3, to_tsvector($4, $5), $6, $7, $8, $9)
          ON CONFLICT (index_id, external_id) DO UPDATE SET
            title = $3,
            title_tsvector = to_tsvector($4, $5),
            title_length = $6,
            metadata = $7,
            segment_count = $8,
+           kind = $9,
            updated_at = NOW()
          RETURNING document_id, (xmax = 0) AS is_insert`,
         [
@@ -118,6 +119,7 @@ export async function ingestDocument(
           wordCount(request.title),
           JSON.stringify(request.metadata || {}),
           storedSegmentCount,
+          request.kind ?? null,
         ]
       )
 

@@ -29,6 +29,20 @@ describe('ingest service', () => {
     await pool.query("UPDATE search_indexes SET total_documents = 0 WHERE index_id = $1", [indexId])
   })
 
+  it('stores kind on the document and clears it when absent on re-ingest', async () => {
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'kind-doc', title: 'Kind Doc', body: 'Body text for kind test.', kind: 'services',
+    }, config)
+    let row = await pool.query("SELECT kind FROM search_documents WHERE external_id = 'kind-doc'")
+    expect(row.rows[0].kind).toBe('services')
+
+    await ingestDocument(pool, indexId, adapter, {
+      external_id: 'kind-doc', title: 'Kind Doc', body: 'Body text for kind test.',
+    }, config)
+    row = await pool.query("SELECT kind FROM search_documents WHERE external_id = 'kind-doc'")
+    expect(row.rows[0].kind).toBeNull()
+  })
+
   it('ingests a document and creates segments', async () => {
     const result = await ingestDocument(pool, indexId, adapter, {
       external_id: 'doc-1',
