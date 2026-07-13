@@ -3,7 +3,7 @@
 
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
-import type { SearchIndex, SearchResponse, SearchResult } from '../types'
+import type { RecencyRule, SearchIndex, SearchResponse, SearchResult } from '../types'
 import { computeRRF } from './score'
 
 export interface VectorCandidate {
@@ -52,6 +52,26 @@ export interface HybridSearchOptions {
   minVectorScore?: number
   maxChunksPerDoc?: number
   kindWeights?: Record<string, number>
+  recency?: RecencyRule
+}
+
+const DAY_MS = 86_400_000
+
+// Time decay on the fused score: a doc published now is neutral (1.0) and age
+// converges to the floor, so old news sinks a bounded number of ranks instead
+// of falling without limit. Docs with no parseable published_at, kinds outside
+// the rule, and future dates are all neutral — strictly opt-in, like kind weights.
+export function recencyMultiplier(
+  rule: RecencyRule | undefined,
+  kind: string | null,
+  metadata: Record<string, unknown>,
+  nowMs: number,
+): number {
+  if (!rule || kind == null || !rule.kinds.includes(kind)) return 1
+  const published = typeof metadata.published_at === 'string' ? Date.parse(metadata.published_at) : NaN
+  if (Number.isNaN(published)) return 1
+  const ageDays = Math.max(0, (nowMs - published) / DAY_MS)
+  return rule.floor + (1 - rule.floor) * 2 ** (-ageDays / rule.half_life_days)
 }
 
 // The cast to a dimensioned vector must appear verbatim in ORDER BY: the per-index
@@ -238,6 +258,8 @@ export async function hybridSearch(
   const rrfK: number = config.rrf_k ?? 60
   const rrfWeights = config.rrf_weights ?? { bm25: 1.0, vector: 1.0 }
   const kindWeights = options.kindWeights ?? config.kind_weights ?? {}
+  const recency = options.recency ?? config.recency
+  const nowMs = Date.now()
   const minBm25Score = options.minBm25Score ?? config.min_bm25_score ?? 0
   const minVectorScore = options.minVectorScore ?? config.min_vector_score ?? 0
 
@@ -265,7 +287,8 @@ export async function hybridSearch(
       // a roughly uniform rank shift (0.85 ≈ ~10 ranks at k=60). Documents with
       // no kind, and kinds absent from the map, are neutral.
       const kindWeight = s.kind != null ? kindWeights[s.kind] ?? 1 : 1
-      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights }) * kindWeight
+      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights })
+        * kindWeight * recencyMultiplier(recency, s.kind, s.metadata, nowMs)
       return { ...s, score, bm25Rank, vectorRank }
     })
     .filter((s): s is NonNullable<typeof s> => s != null)

@@ -1,6 +1,12 @@
 // ABOUTME: Shared type definitions for the pgsearch API.
 // ABOUTME: Covers index configuration, documents, segments, and API contracts.
 
+export interface RecencyRule {
+  kinds: string[]
+  half_life_days: number
+  floor: number
+}
+
 export interface IndexConfig {
   text_search_config: string
   embedding: EmbeddingConfig
@@ -8,6 +14,7 @@ export interface IndexConfig {
   rrf_k: number
   rrf_weights: { bm25: number; vector: number }
   kind_weights: Record<string, number>
+  recency?: RecencyRule
   min_bm25_score: number
   min_vector_score: number
   max_segment_tokens: number
