@@ -48,7 +48,7 @@ function loadEnv(): { apiBase: string; searchKey: string } {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 async function main(): Promise<void> {
-  const indexName = process.env.EVAL_INDEX ?? 'phila-gov-en'
+  const indexName = process.env.EVAL_INDEX ?? 'phila-gov'
   const label = process.argv[2]
   const extraParams = process.argv[3] ?? ''
   if (!label) {
