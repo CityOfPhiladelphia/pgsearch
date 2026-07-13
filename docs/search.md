@@ -41,6 +41,7 @@ Each index has its own set of scoring parameters. You can adjust them independen
 | `field_weights.title` | `3.0` | Keyword weight multiplier for title matches. |
 | `field_weights.body` | `1.0` | Keyword weight multiplier for body matches. |
 | `kind_weights` | `{}` | Per-kind multipliers on the fused score. See [Result-Type Weighting](#result-type-weighting). |
+| `recency` | unset | Time-decay rule for dated kinds. See [Recency](#recency). |
 | `text_search_config` | `'english'` | PostgreSQL text search configuration. Controls stemming and stop words. Change for non-English content. |
 
 ### Updating Parameters
@@ -84,6 +85,28 @@ As a worked example, phila.gov content classifies by URL path into `services`, `
 ```
 
 Start gentle (`0.85`–`1.15`), re-run your evals, and only widen the spread when a stratum still floods results. `tools` runs hotter than the rest deliberately: tool docs are one-paragraph shims, so they retrieve mid-pack on thin text even when they're the best destination, and with only a couple dozen of them a stronger lift can't flood anything.
+
+---
+
+## Recency
+
+For time-sensitive strata — news posts, notices, announcements — a flat kind weight punishes yesterday's press release as hard as one from 2019. The `recency` rule replaces that with continuous time decay on the fused score:
+
+```json
+{ "recency": { "kinds": ["posts"], "half_life_days": 180, "floor": 0.85 } }
+```
+
+The multiplier is `floor + (1 - floor) * 2^(-age_days / half_life_days)`, computed from the document's `metadata.published_at` (any `Date.parse`-able string; ingest stamps facts, config holds policy). A doc published today is neutral (`1.0`); age converges to the floor, so old content sinks a bounded number of ranks (`0.85` ≈ ~10 ranks at the default `rrf_k`) instead of falling without limit — a floorless decay lets marginally-relevant fresh docs bury exact old matches.
+
+Neutrality mirrors kind weights: no rule configured, a kind outside `kinds`, a missing or unparseable `published_at`, or a future date all mean `1.0`. The rule stacks multiplicatively with `kind_weights`, so a dated kind usually wants weight `1.0` there and lets decay do the demotion.
+
+Tuning lives in the two knobs, against your evals rather than a priori: with `half_life_days: 180` scores converge to the floor by roughly two years (a 3-year-old and an 8-year-old post tie); if stale-vs-ancient separation matters, lengthen the half-life and lower the floor (`365`/`0.7` keeps discriminating out past five years) rather than adding a second decay regime.
+
+Search requests can replace the configured rule for a single query with the `recency` parameter — `kinds:half_life_days:floor`, kinds comma-separated:
+
+```
+GET /public/search/my-index?q=snow+emergency&recency=posts:180:0.85
+```
 
 ---
 
