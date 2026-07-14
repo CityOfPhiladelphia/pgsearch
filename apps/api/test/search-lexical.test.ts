@@ -58,8 +58,8 @@ describe('lexical pass', () => {
   })
   afterAll(async () => { await teardownSchema(); await closePool() })
 
-  it('returns keyword matches ranked in bm25 mode', async () => {
-    const response = await search('trash', { mode: 'bm25' })
+  it('returns keyword matches ranked in lexical mode', async () => {
+    const response = await search('trash', { mode: 'lexical' })
     const ids = response.results.map(r => r.external_id)
     expect(ids).toContain('title-hit')
     expect(ids).toContain('body-hit')
@@ -67,13 +67,13 @@ describe('lexical pass', () => {
   })
 
   it('ranks a title match above repeated body matches', async () => {
-    const response = await search('trash', { mode: 'bm25' })
+    const response = await search('trash', { mode: 'lexical' })
     const ids = response.results.map(r => r.external_id)
     expect(ids.indexOf('title-hit')).toBeLessThan(ids.indexOf('body-hit'))
   })
 
   it('ranks candidates before truncating: the best match survives a pool larger than the candidate limit', async () => {
-    const response = await search('trash', { mode: 'bm25' })
+    const response = await search('trash', { mode: 'lexical' })
     expect(response.results[0].external_id).toBe('best-match')
   })
 
@@ -88,8 +88,8 @@ describe('lexical pass', () => {
     expect([...scores].sort((a, b) => b - a)).toEqual(scores)
   })
 
-  it('returns no results for non-matching terms in bm25 mode', async () => {
-    const response = await search('zeppelin', { mode: 'bm25' })
+  it('returns no results for non-matching terms in lexical mode', async () => {
+    const response = await search('zeppelin', { mode: 'lexical' })
     expect(response.results).toEqual([])
   })
 

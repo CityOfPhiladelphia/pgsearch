@@ -17,7 +17,7 @@ describe('search', () => {
   const config = mergeConfig({})
 
   // Fetch a fresh index per query, mirroring how the route resolves it from auth on
-  // each request — BM25 corpus stats are maintained incrementally on ingest.
+  // each request — lexical corpus stats are maintained incrementally on ingest.
   const search = async (queryText: string, options: HybridSearchOptions = {}) =>
     hybridSearch(pool, (await getIndex(pool, 'search-test'))!, adapter, queryText, options)
 
@@ -101,14 +101,14 @@ describe('search', () => {
   })
 
   describe('search mode', () => {
-    it('mode=bm25 returns only keyword matches', async () => {
-      const results = await search('parking permit', { limit: 10, mode: 'bm25' })
+    it('mode=lexical returns only keyword matches', async () => {
+      const results = await search('parking permit', { limit: 10, mode: 'lexical' })
       expect(results.results.length).toBeGreaterThan(0)
       expect(results.query).toBe('parking permit')
     })
 
-    it('mode=bm25 returns empty for queries with no keyword matches', async () => {
-      const results = await search('xyzzynonexistent', { limit: 10, mode: 'bm25' })
+    it('mode=lexical returns empty for queries with no keyword matches', async () => {
+      const results = await search('xyzzynonexistent', { limit: 10, mode: 'lexical' })
       expect(results.results).toEqual([])
       expect(results.total).toBe(0)
     })
@@ -138,7 +138,7 @@ describe('search', () => {
     })
 
     it('candidates appearing in both passes score higher than single-pass', async () => {
-      // "parking" matches via BM25 (keyword) and should also have vector similarity
+      // "parking" matches via lexical (keyword) and should also have vector similarity
       // Documents that appear in both passes get two RRF contributions
       const results = await search('parking', { limit: 10 })
       expect(results.results.length).toBeGreaterThan(1)

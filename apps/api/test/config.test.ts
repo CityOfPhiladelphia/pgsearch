@@ -10,8 +10,8 @@ describe('config', () => {
     expect(config.embedding).toEqual({ provider: 'bedrock', model: 'amazon.titan-embed-text-v2:0', dimensions: 1024 })
     expect(config.field_weights).toEqual({ title: 3.0, body: 1.0 })
     expect(config.rrf_k).toBe(60)
-    expect(config.rrf_weights).toEqual({ bm25: 1.0, vector: 1.0 })
-    expect(config.min_bm25_score).toBe(0)
+    expect(config.rrf_weights).toEqual({ lexical: 1.0, vector: 1.0 })
+    expect(config.min_lexical_score).toBe(0)
     expect(config.min_vector_score).toBe(0)
     expect(config.max_segment_tokens).toBe(1000)
     expect(config.max_segments_per_document).toBe(150)
@@ -43,9 +43,9 @@ describe('config', () => {
 
   it('merges partial rrf_weights preserving defaults', () => {
     const config = mergeConfig({
-      rrf_weights: { bm25: 2.0 } as any
+      rrf_weights: { lexical: 2.0 } as any
     })
-    expect(config.rrf_weights.bm25).toBe(2.0)
+    expect(config.rrf_weights.lexical).toBe(2.0)
     expect(config.rrf_weights.vector).toBe(1.0) // default preserved
   })
 

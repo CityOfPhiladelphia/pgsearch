@@ -51,7 +51,10 @@ const pgsearchApi = new LambdaPostgresApi(stack as any, 'pgsearchApi', {
   runtime: 'nodejs22',
   handler: 'index.handler',
   codeDir: '../apps/api/dist',
-  reservedConcurrentExecutions: 5,
+  // Covers a full-corpus sync (govsync local run + scheduled Lambda, 5 upsert
+  // workers each) with headroom left for interactive search; at 5, syncs
+  // starved search queries into API Gateway 500s.
+  reservedConcurrentExecutions: 20,
   // Segment embeddings are stored out of line: the phila-gov index alone holds
   // ~195 MB of TOASTed vectors, which a semantic query reads in full whenever
   // the ANN index cannot serve it. The default dev instance has ~1 GB of RAM and

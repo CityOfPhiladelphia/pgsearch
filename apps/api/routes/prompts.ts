@@ -20,10 +20,10 @@ promptsRoutes.use('/public/index/:name/prompts', indexAuth)
 promptsRoutes.use('/public/index/:name/prompts/*', indexAuth)
 
 const retrievalSchema: Schema = {
-  mode: ['oneOf', ['hybrid', 'bm25', 'semantic']],
+  mode: ['oneOf', ['hybrid', 'lexical', 'semantic']],
   limit: [['typeof', 'number'], ['min', 1]],
   max_chunks_per_doc: [['typeof', 'number'], ['min', 1]],
-  min_bm25_score: ['typeof', 'number'],
+  min_lexical_score: ['typeof', 'number'],
   min_vector_score: ['typeof', 'number'],
 }
 

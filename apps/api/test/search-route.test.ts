@@ -56,4 +56,25 @@ describe('GET /public/search/:name kind_weights validation', () => {
   it('rejects an empty kind', async () => {
     await expectValidationError('q=water&kind_weights=:1.2')
   })
+
+  it('rejects a recency rule with too few fields', async () => {
+    await expectValidationError('q=water&recency=posts:180')
+  })
+
+  it('rejects a recency rule with empty kinds', async () => {
+    await expectValidationError('q=water&recency=:180:0.85')
+  })
+
+  it('rejects a non-positive half-life', async () => {
+    await expectValidationError('q=water&recency=posts:0:0.85')
+  })
+
+  it('rejects a floor outside [0,1]', async () => {
+    await expectValidationError('q=water&recency=posts:180:1.5')
+  })
+
+  it('rejects an empty kinds list', async () => {
+    await expectValidationError('q=water&kinds=')
+    await expectValidationError('q=water&kinds=,,')
+  })
 })

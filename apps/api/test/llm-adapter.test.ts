@@ -7,7 +7,7 @@ import type { PromptContent } from '../types'
 
 const base: PromptContent = {
   system: '', response_format: '', model: '', max_tokens: 1, temperature: 0,
-  retrieval: { mode: 'hybrid', limit: 1, max_chunks_per_doc: 1, min_bm25_score: 0, min_vector_score: 0 },
+  retrieval: { mode: 'hybrid', limit: 1, max_chunks_per_doc: 1, min_lexical_score: 0, min_vector_score: 0 },
 }
 
 describe('getLlmAdapter', () => {

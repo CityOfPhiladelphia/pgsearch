@@ -1,5 +1,5 @@
 {
-  "description": "Golden query set for phila-gov-en relevance evals. Categories stress different retriever duties: exact-token (lexical membership on jargon/identifiers embeddings fumble), semantic (vocabulary mismatch only the vector pass can bridge), rare-term-multi (multi-term queries with one rare term - the IDF stress case), head (common queries that must never regress).",
+  "description": "Golden query set for phila-gov relevance evals. Categories stress different retriever duties: exact-token (lexical membership on jargon/identifiers embeddings fumble), semantic (vocabulary mismatch only the vector pass can bridge), rare-term-multi (multi-term queries with one rare term - the IDF stress case), head (common queries that must never regress), temporal (queries where publication date carries relevance - recurring announcements where fresh posts should outrank stale ones, verified against the live corpus to surface dated posts spanning years).",
   "queries": [
     { "q": "L&I building permit", "category": "exact-token" },
     { "q": "OPA property assessment", "category": "exact-token" },
@@ -43,6 +43,14 @@
     { "q": "pay water bill", "category": "head" },
     { "q": "voter registration", "category": "head" },
     { "q": "police report", "category": "head" },
-    { "q": "building permit", "category": "head" }
+    { "q": "building permit", "category": "head" },
+    { "q": "mayor budget address", "category": "temporal" },
+    { "q": "snow emergency", "category": "temporal" },
+    { "q": "heat health emergency", "category": "temporal" },
+    { "q": "new police commissioner", "category": "temporal" },
+    { "q": "city wage tax rate change", "category": "temporal" },
+    { "q": "marathon road closures", "category": "temporal" },
+    { "q": "trash collection delay", "category": "temporal" },
+    { "q": "street sweeping program", "category": "temporal" }
   ]
 }

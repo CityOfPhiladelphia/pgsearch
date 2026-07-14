@@ -54,8 +54,8 @@ describe('duplicate content collapse', () => {
     expect(mirrors).toHaveLength(1)
   })
 
-  it('collapses in bm25 and semantic modes too', async () => {
-    for (const mode of ['bm25', 'semantic'] as const) {
+  it('collapses in lexical and semantic modes too', async () => {
+    for (const mode of ['lexical', 'semantic'] as const) {
       const response = await search('pay water bill', { mode })
       const mirrors = response.results.filter(r => r.external_id.includes('pay-water-bill'))
       expect(mirrors, mode).toHaveLength(1)
