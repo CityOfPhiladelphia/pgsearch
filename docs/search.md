@@ -98,10 +98,10 @@ The parameter replaces the whole configured map for that request (pass `kind_wei
 As a worked example, phila.gov content classifies by URL path into `services`, `guides`, `departments`, `programs`, `documents`, and `posts` (which absorbs `/news/`, `/press-releases/`, and date-slugged paths), plus `tools` for interactive applications synced from the city's tools directory. Its palette carries only the two entries that earn their keep:
 
 ```json
-{ "kind_weights": { "tools": 1.3, "posts": 0.85 } }
+{ "kind_weights": { "tools": 1.5, "posts": 0.85 } }
 ```
 
-`tools` runs hot because tool docs are one-paragraph shims — they retrieve mid-pack on thin text even when they're the best destination, and with only a couple dozen of them a stronger lift can't flood anything. `posts` runs cool as a composition counterweight: news is three quarters of that corpus, so a blended list skews toward it on volume alone. Everything else is neutral — fine-grained ordering preferences (±0.05–0.15 spreads across every stratum) measured as noise in evals and are better left out. Start with nothing, add a weight only when evals show a stratum systematically mis-served, and prefer `kinds` filtering when the real need is separate surfaces rather than reordering a blended one.
+`tools` runs hot because interactive applications are usually the most actionable destination, yet retrieve mid-pack: directory-synced shims are one paragraph of thin text, and crawled tool landing pages compete with content-dense siblings. With only a couple dozen tool docs a strong lift can't flood anything. The 1.5 was measured against clickthrough ground truth (top site-search queries paired with the URLs users actually clicked): the smallest lift that puts the citywide jobs board first for "jobs" — the site's heaviest query — with no meaningful collateral movement; larger lifts (1.7, 2.0) bought nothing further. `posts` runs cool as a composition counterweight: news is three quarters of that corpus, so a blended list skews toward it on volume alone. Everything else is neutral — fine-grained ordering preferences (±0.05–0.15 spreads across every stratum) measured as noise in evals and are better left out. Start with nothing, add a weight only when evals show a stratum systematically mis-served, and prefer `kinds` filtering when the real need is separate surfaces rather than reordering a blended one.
 
 ---
 
