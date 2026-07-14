@@ -250,7 +250,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
     }
-    // Cross-lingual — vector search may help here, BM25 won't
+    // Cross-lingual — vector search may help here, lexical won't
     expect(results.results.length).toBeGreaterThan(0)
   }, 30_000)
 
@@ -260,7 +260,7 @@ describe('e2e: hybrid search with phila.gov service pages', () => {
     for (const r of results.results) {
       console.log(`    [${r.score.toFixed(3)}] ${r.title} (${r.external_id})`)
     }
-    // BM25 will fail on typos — does vector search save us?
+    // lexical will fail on typos — does vector search save us?
     expect(results.results.length).toBeGreaterThan(0)
   }, 30_000)
 

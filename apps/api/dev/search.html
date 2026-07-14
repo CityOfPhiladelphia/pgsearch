@@ -40,7 +40,7 @@
   <input type="search" id="q" placeholder="Search…" autofocus>
   <select id="mode">
     <option value="hybrid">hybrid</option>
-    <option value="bm25">bm25</option>
+    <option value="lexical">lexical</option>
     <option value="semantic">semantic</option>
   </select>
   <button type="submit">Search</button>
@@ -87,7 +87,9 @@
         return;
       }
       $results.innerHTML = results.map(r => {
-        const rawUrl = r.metadata?.source_url ?? '';
+        console.dir(r);
+        const rawUrl = r.metadata?.external_id ?? '';
+        console.log(rawUrl)
         const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : '#';
         const type = r.metadata?.content_type ?? '';
         const raw = r.snippet ?? '';

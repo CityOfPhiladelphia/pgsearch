@@ -15,10 +15,10 @@ describe('kind weighting', () => {
   let indexId: number
   const adapter = createTestAdapter(384)
 
-  // bm25 mode keeps ordering fully deterministic (no synthetic-embedding ranks);
+  // lexical mode keeps ordering fully deterministic (no synthetic-embedding ranks);
   // the kind multiplier applies at fusion in every mode.
   const search = async (queryText: string, options: HybridSearchOptions = {}) =>
-    hybridSearch(pool, (await getIndex(pool, 'kind-weights-test'))!, adapter, queryText, { mode: 'bm25', ...options })
+    hybridSearch(pool, (await getIndex(pool, 'kind-weights-test'))!, adapter, queryText, { mode: 'lexical', ...options })
 
   const ids = (response: { results: { external_id: string }[] }) => response.results.map(r => r.external_id)
 

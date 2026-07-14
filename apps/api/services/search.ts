@@ -15,13 +15,13 @@ export interface VectorCandidate {
   similarity: number
 }
 
-export type SearchMode = 'hybrid' | 'bm25' | 'semantic'
+export type SearchMode = 'hybrid' | 'lexical' | 'semantic'
 
 export interface FusedCandidate {
   score: number
-  bm25Rank: number | null
+  lexicalRank: number | null
   vectorRank: number | null
-  bm25Score: number
+  lexicalScore: number
   vectorScore: number
   external_id: string
 }
@@ -34,13 +34,13 @@ export interface FusedCandidate {
 // across runs.
 export function fusionOrder(a: FusedCandidate, b: FusedCandidate): number {
   if (b.score !== a.score) return b.score - a.score
-  const passesA = (a.bm25Rank != null ? 1 : 0) + (a.vectorRank != null ? 1 : 0)
-  const passesB = (b.bm25Rank != null ? 1 : 0) + (b.vectorRank != null ? 1 : 0)
+  const passesA = (a.lexicalRank != null ? 1 : 0) + (a.vectorRank != null ? 1 : 0)
+  const passesB = (b.lexicalRank != null ? 1 : 0) + (b.vectorRank != null ? 1 : 0)
   if (passesB !== passesA) return passesB - passesA
   const vectorA = a.vectorRank != null ? 1 : 0
   const vectorB = b.vectorRank != null ? 1 : 0
   if (vectorB !== vectorA) return vectorB - vectorA
-  if (b.bm25Score !== a.bm25Score) return b.bm25Score - a.bm25Score
+  if (b.lexicalScore !== a.lexicalScore) return b.lexicalScore - a.lexicalScore
   if (b.vectorScore !== a.vectorScore) return b.vectorScore - a.vectorScore
   return a.external_id < b.external_id ? -1 : a.external_id > b.external_id ? 1 : 0
 }
@@ -48,7 +48,7 @@ export function fusionOrder(a: FusedCandidate, b: FusedCandidate): number {
 export interface HybridSearchOptions {
   limit?: number
   mode?: SearchMode
-  minBm25Score?: number
+  minLexicalScore?: number
   minVectorScore?: number
   maxChunksPerDoc?: number
   kindWeights?: Record<string, number>
@@ -134,8 +134,8 @@ export async function hybridSearch(
   const indexId = index.index_id
   const limit = options.limit ?? 10
   const mode = options.mode ?? 'hybrid'
-  const runBm25 = mode !== 'semantic'
-  const runVector = mode !== 'bm25'
+  const runLexical = mode !== 'semantic'
+  const runVector = mode !== 'lexical'
 
   const config = index.config
 
@@ -143,7 +143,7 @@ export async function hybridSearch(
   const fieldWeights = config.field_weights ?? { title: 3.0, body: 1.0 }
 
   let tsquery: string | null = null
-  if (runBm25) {
+  if (runLexical) {
     const tsqueryResult = await pool.query(
       `SELECT plainto_tsquery($1, $2) AS tsquery`,
       [textSearchConfig, queryText],
@@ -157,8 +157,8 @@ export async function hybridSearch(
   const weightScale = Math.max(fieldWeights.title, fieldWeights.body)
 
   // Run lexical and vector passes concurrently
-  const [bm25Rows, embeddingResults] = await Promise.all([
-    runBm25 && tsquery
+  const [lexicalRows, embeddingResults] = await Promise.all([
+    runLexical && tsquery
       ? pool.query(
           `SELECT s.segment_id, s.document_id, s.body, s.content_hash, d.title, d.external_id, d.kind, d.metadata,
                   ts_rank_cd(ARRAY[$4, 0.2, 0.4, $3]::float4[],
@@ -193,14 +193,14 @@ export async function hybridSearch(
     content_hash: string
     kind: string | null
     metadata: Record<string, unknown>
-    bm25Score: number
+    lexicalScore: number
     vectorScore: number
   }
 
   const segmentMap = new Map<string, ScoredSegment>()
 
   // Process lexical candidates
-  for (const row of bm25Rows.rows) {
+  for (const row of lexicalRows.rows) {
     segmentMap.set(row.segment_id, {
       segment_id: row.segment_id,
       document_id: row.document_id,
@@ -210,7 +210,7 @@ export async function hybridSearch(
       content_hash: row.content_hash,
       kind: row.kind ?? null,
       metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
-      bm25Score: parseFloat(row.lex_score),
+      lexicalScore: parseFloat(row.lex_score),
       vectorScore: 0,
     })
   }
@@ -239,7 +239,7 @@ export async function hybridSearch(
         content_hash: row.content_hash,
         kind: row.kind ?? null,
         metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {}),
-        bm25Score: 0,
+        lexicalScore: 0,
         vectorScore: 0,
       })
     }
@@ -256,19 +256,19 @@ export async function hybridSearch(
   const segments = Array.from(segmentMap.values())
 
   const rrfK: number = config.rrf_k ?? 60
-  const rrfWeights = config.rrf_weights ?? { bm25: 1.0, vector: 1.0 }
+  const rrfWeights = config.rrf_weights ?? { lexical: 1.0, vector: 1.0 }
   const kindWeights = options.kindWeights ?? config.kind_weights ?? {}
   const recency = options.recency ?? config.recency
   const nowMs = Date.now()
-  const minBm25Score = options.minBm25Score ?? config.min_bm25_score ?? 0
+  const minLexicalScore = options.minLexicalScore ?? config.min_lexical_score ?? 0
   const minVectorScore = options.minVectorScore ?? config.min_vector_score ?? 0
 
   // Assign 1-based ranks per retriever (sorted by raw score descending), applying score floors
-  const bm25Ranked = segments
-    .filter(s => s.bm25Score > minBm25Score)
-    .sort((a, b) => b.bm25Score - a.bm25Score)
-  const bm25RankMap = new Map<string, number>()
-  bm25Ranked.forEach((s, i) => bm25RankMap.set(s.segment_id, i + 1))
+  const lexicalRanked = segments
+    .filter(s => s.lexicalScore > minLexicalScore)
+    .sort((a, b) => b.lexicalScore - a.lexicalScore)
+  const lexicalRankMap = new Map<string, number>()
+  lexicalRanked.forEach((s, i) => lexicalRankMap.set(s.segment_id, i + 1))
 
   const vectorRanked = segments
     .filter(s => s.vectorScore > minVectorScore)
@@ -279,17 +279,17 @@ export async function hybridSearch(
   // Compute RRF score for each segment
   const scored = segments
     .map(s => {
-      const bm25Rank = bm25RankMap.get(s.segment_id) ?? null
+      const lexicalRank = lexicalRankMap.get(s.segment_id) ?? null
       const vectorRank = vectorRankMap.get(s.segment_id) ?? null
       // Segments excluded by both score floors are dropped
-      if (bm25Rank == null && vectorRank == null) return null
+      if (lexicalRank == null && vectorRank == null) return null
       // The kind multiplier scales the fused score, so under w/(k+r) it acts as
       // a roughly uniform rank shift (0.85 ≈ ~10 ranks at k=60). Documents with
       // no kind, and kinds absent from the map, are neutral.
       const kindWeight = s.kind != null ? kindWeights[s.kind] ?? 1 : 1
-      const score = computeRRF({ bm25Rank: bm25Rank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights })
+      const score = computeRRF({ lexicalRank: lexicalRank ?? undefined, vectorRank: vectorRank ?? undefined, k: rrfK, weights: rrfWeights })
         * kindWeight * recencyMultiplier(recency, s.kind, s.metadata, nowMs)
-      return { ...s, score, bm25Rank, vectorRank }
+      return { ...s, score, lexicalRank, vectorRank }
     })
     .filter((s): s is NonNullable<typeof s> => s != null)
 

@@ -12,10 +12,10 @@ export interface IndexConfig {
   embedding: EmbeddingConfig
   field_weights: { title: number; body: number }
   rrf_k: number
-  rrf_weights: { bm25: number; vector: number }
+  rrf_weights: { lexical: number; vector: number }
   kind_weights: Record<string, number>
   recency?: RecencyRule
-  min_bm25_score: number
+  min_lexical_score: number
   min_vector_score: number
   max_segment_tokens: number
   max_segments_per_document: number
@@ -135,10 +135,10 @@ export type AppEnv = {
 }
 
 export interface PromptRetrievalConfig {
-  mode: 'hybrid' | 'bm25' | 'semantic'
+  mode: 'hybrid' | 'lexical' | 'semantic'
   limit: number
   max_chunks_per_doc: number
-  min_bm25_score: number
+  min_lexical_score: number
   min_vector_score: number
 }
 

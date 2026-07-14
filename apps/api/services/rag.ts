@@ -28,7 +28,7 @@ export async function runRag(
     mode: promptContent.retrieval.mode,
     limit: promptContent.retrieval.limit,
     maxChunksPerDoc: promptContent.retrieval.max_chunks_per_doc,
-    minBm25Score: promptContent.retrieval.min_bm25_score,
+    minLexicalScore: promptContent.retrieval.min_lexical_score,
     minVectorScore: promptContent.retrieval.min_vector_score,
   })
 

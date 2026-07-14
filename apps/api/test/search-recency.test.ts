@@ -50,10 +50,10 @@ describe('recency decay at fusion', () => {
   const rule: RecencyRule = { kinds: ['posts'], half_life_days: 180, floor: 0.85 }
   const today = new Date().toISOString().slice(0, 10)
 
-  // bm25 mode keeps ordering fully deterministic (no synthetic-embedding ranks);
+  // lexical mode keeps ordering fully deterministic (no synthetic-embedding ranks);
   // the recency multiplier applies at fusion in every mode.
   const search = async (queryText: string, options: HybridSearchOptions = {}) =>
-    hybridSearch(pool, (await getIndex(pool, 'recency-test'))!, adapter, queryText, { mode: 'bm25', ...options })
+    hybridSearch(pool, (await getIndex(pool, 'recency-test'))!, adapter, queryText, { mode: 'lexical', ...options })
 
   const ids = (response: { results: { external_id: string }[] }) => response.results.map(r => r.external_id)
 

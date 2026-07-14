@@ -18,7 +18,7 @@ const sampleContent: PromptContent = {
     mode: 'hybrid',
     limit: 8,
     max_chunks_per_doc: 3,
-    min_bm25_score: 0,
+    min_lexical_score: 0,
     min_vector_score: 0,
   },
 }

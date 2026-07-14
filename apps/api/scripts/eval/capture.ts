@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const MODES = ['hybrid', 'bm25', 'semantic'] as const
+const MODES = ['hybrid', 'lexical', 'semantic'] as const
 const LIMIT = 50
 const REQUEST_GAP_MS = 250 // stay under the WAF rate limit (see pgsearch-by3)
 
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
       emptyCount++
       console.warn(`[capture] zero hybrid results: "${entry.q}"`)
     }
-    console.log(`[capture] ${entry.q} — hybrid:${modes.hybrid.length} bm25:${modes.bm25.length} semantic:${modes.semantic.length}`)
+    console.log(`[capture] ${entry.q} — hybrid:${modes.hybrid.length} lexical:${modes.lexical.length} semantic:${modes.semantic.length}`)
     captured.push({ ...entry, modes })
   }
 

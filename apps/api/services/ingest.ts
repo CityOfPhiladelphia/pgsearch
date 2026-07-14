@@ -68,7 +68,7 @@ export async function ingestDocument(
 
   // Partition new segments by content hash so the hash travels with its index.
   // Segments with identical content collapse to one entry: the store dedupes on
-  // content_hash, trading exact BM25 term-frequency fidelity for an idempotent,
+  // content_hash, trading exact lexical term-frequency fidelity for an idempotent,
   // simpler store. Acceptable for search; revisit if duplicate chunks must count distinctly.
   const changed = new Map<string, number>()    // content_hash -> segment index (needs embedding)
   const unchanged = new Map<string, number>()  // content_hash -> segment index (already stored)

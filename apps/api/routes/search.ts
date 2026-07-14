@@ -21,7 +21,7 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   if (isNaN(limit) || limit < 1) return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
 
   const modeParam = c.req.query('mode') as SearchMode | undefined
-  const validModes: SearchMode[] = ['hybrid', 'bm25', 'semantic']
+  const validModes: SearchMode[] = ['hybrid', 'lexical', 'semantic']
   if (modeParam && !validModes.includes(modeParam)) return apiError(c, 'VALIDATION_ERROR', `mode must be one of: ${validModes.join(', ')}`)
 
   // Replaces the index-config kind_weights for this request when present.

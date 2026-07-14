@@ -21,7 +21,7 @@ const promptContent: PromptContent = {
   model: 'anthropic.claude-haiku-4-5',
   max_tokens: 256,
   temperature: 0,
-  retrieval: { mode: 'hybrid', limit: 4, max_chunks_per_doc: 2, min_bm25_score: 0, min_vector_score: 0 },
+  retrieval: { mode: 'hybrid', limit: 4, max_chunks_per_doc: 2, min_lexical_score: 0, min_vector_score: 0 },
 }
 
 describe('runRag', () => {
