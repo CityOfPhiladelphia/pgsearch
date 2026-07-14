@@ -72,4 +72,9 @@ describe('GET /public/search/:name kind_weights validation', () => {
   it('rejects a floor outside [0,1]', async () => {
     await expectValidationError('q=water&recency=posts:180:1.5')
   })
+
+  it('rejects an empty kinds list', async () => {
+    await expectValidationError('q=water&kinds=')
+    await expectValidationError('q=water&kinds=,,')
+  })
 })

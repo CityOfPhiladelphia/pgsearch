@@ -55,7 +55,17 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
     recency = { kinds, half_life_days: halfLife, floor }
   }
 
+  // Restricts results to the listed kinds (comma-separated), e.g. kinds=posts,services.
+  const kindsParam = c.req.query('kinds')
+  let kinds: string[] | undefined
+  if (kindsParam != null) {
+    kinds = kindsParam.split(',').map(k => k.trim()).filter(Boolean)
+    if (kinds.length === 0) {
+      return apiError(c, 'VALIDATION_ERROR', 'kinds must be a comma-separated list of kind labels')
+    }
+  }
+
   const adapter = getAdapter(index.config)
-  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, kindWeights, recency })
+  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, kindWeights, recency, kinds })
   return c.json(results, 200)
 }))

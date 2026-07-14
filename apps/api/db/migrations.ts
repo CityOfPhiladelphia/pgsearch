@@ -102,4 +102,9 @@ export const migrations: Migration[] = [
     sql: `ALTER TABLE search_documents DROP COLUMN IF EXISTS title_length;
           ALTER TABLE search_segments DROP COLUMN IF EXISTS body_length;`,
   },
+  {
+    version: 9,
+    description: 'Index document kind for kinds-filtered search and per-kind listings',
+    sql: `CREATE INDEX IF NOT EXISTS idx_documents_index_kind ON search_documents (index_id, kind);`,
+  },
 ]

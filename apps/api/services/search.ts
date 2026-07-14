@@ -53,6 +53,8 @@ export interface HybridSearchOptions {
   maxChunksPerDoc?: number
   kindWeights?: Record<string, number>
   recency?: RecencyRule
+  /** Restrict results to these kinds; filtering happens in SQL in both passes. */
+  kinds?: string[]
 }
 
 const DAY_MS = 86_400_000
@@ -78,12 +80,17 @@ export function recencyMultiplier(
 // HNSW indexes are expression indexes on (embedding::vector(dims)), and the planner
 // only matches the identical expression. dims is interpolated (typmods cannot be
 // parameterized) and validated as an integer.
-export function vectorCandidatesSql(dims: number): string {
+export function vectorCandidatesSql(dims: number, kindFiltered = false): string {
   if (!Number.isInteger(dims) || dims <= 0) throw new Error(`invalid embedding dimensions: ${dims}`)
+  // The kind filter joins documents and discards non-matching rows from the HNSW
+  // scan frontier, so filtered scans run with ef_search at its ceiling to keep
+  // enough survivors for the candidate limit.
+  const join = kindFiltered ? 'JOIN search_documents d ON d.document_id = s.document_id' : ''
+  const filter = kindFiltered ? 'AND d.kind = ANY($4)' : ''
   return `SELECT s.segment_id, s.document_id, s.body, s.segment_index, s.content_hash,
             1 - ((s.embedding)::vector(${dims}) <=> $1::vector) AS similarity
-     FROM search_segments s
-     WHERE s.index_id = $2
+     FROM search_segments s ${join}
+     WHERE s.index_id = $2 ${filter}
      ORDER BY (s.embedding)::vector(${dims}) <=> $1::vector
      LIMIT $3`
 }
@@ -94,8 +101,9 @@ export async function vectorCandidates(
   dims: number,
   queryEmbedding: number[],
   limit: number,
+  kinds?: string[],
 ): Promise<VectorCandidate[]> {
-  const sql = vectorCandidatesSql(dims)
+  const sql = vectorCandidatesSql(dims, kinds != null)
   const embeddingStr = `[${queryEmbedding.join(',')}]`
   const client = await pool.connect()
   let result
@@ -104,8 +112,11 @@ export async function vectorCandidates(
     // HNSW returns at most ef_search rows (default 40); it must cover the candidate
     // limit or the index silently truncates the list — a membership error under RRF.
     // SET LOCAL scopes it to this transaction, which pooled connections require.
-    await client.query(`SET LOCAL hnsw.ef_search = ${Math.min(Math.max(limit, 40), 1000)}`)
-    result = await client.query(sql, [embeddingStr, indexId, limit])
+    const efSearch = kinds != null ? 1000 : Math.min(Math.max(limit, 40), 1000)
+    await client.query(`SET LOCAL hnsw.ef_search = ${efSearch}`)
+    const params: unknown[] = [embeddingStr, indexId, limit]
+    if (kinds != null) params.push(kinds)
+    result = await client.query(sql, params)
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')
@@ -169,9 +180,10 @@ export async function hybridSearch(
            JOIN search_documents d ON d.document_id = s.document_id
            WHERE s.index_id = $1
              AND (s.body_tsvector @@ $2 OR d.title_tsvector @@ $2)
+             AND ($5::text[] IS NULL OR d.kind = ANY($5))
            ORDER BY lex_score DESC
            LIMIT 200`,
-          [indexId, tsquery, fieldWeights.title / weightScale, fieldWeights.body / weightScale],
+          [indexId, tsquery, fieldWeights.title / weightScale, fieldWeights.body / weightScale, options.kinds ?? null],
         )
       : Promise.resolve({ rows: [] }),
     runVector
@@ -181,7 +193,7 @@ export async function hybridSearch(
 
   let vectorResults: VectorCandidate[] = []
   if (runVector && embeddingResults.length > 0) {
-    vectorResults = await vectorCandidates(pool, indexId, config.embedding.dimensions, embeddingResults[0], 200)
+    vectorResults = await vectorCandidates(pool, indexId, config.embedding.dimensions, embeddingResults[0], 200, options.kinds)
   }
 
   interface ScoredSegment {
