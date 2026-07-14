@@ -8,7 +8,8 @@ PostgreSQL hybrid search + RAG service combining weighted full-text keyword scor
 ## Key concepts
 
 - **Index** — a named, isolated search namespace. Each index has its own configuration, authentication keys, documents, and vector index. Create one per content domain (e.g., "services-programs", "city-news").
-- **Document** — a searchable unit identified by `external_id`. Has a title, body text, and optional metadata. The body is automatically split into segments for embedding.
+- **Document** — a searchable unit identified by `external_id`. Has a title, body text, an optional `kind` label, and optional metadata. The body is automatically split into segments for embedding.
+- **Kind** — a freeform content-stratum label supplied at ingest (e.g. "services", "posts", "forms"). Search requests filter on it (`kinds=posts,services` — membership, applied in SQL in both passes) and index config can weight it (`kind_weights` — ordering). The engine defines no labels of its own.
 - **Segment** — a chunk of document body sized to a token budget (default ~1000, estimated from UTF-8 byte length). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
 - **Hybrid search** — each query runs two passes: keyword matching (SQL-ranked `ts_rank_cd` over tsvectors) and semantic similarity (pgvector cosine distance). Results are combined using Reciprocal Rank Fusion (RRF) for robust ranking.
 - **RAG** — `/public/rag/:name?prompt=<name>` retrieves the top chunks for a question and asks an LLM to synthesize an answer with inline citations. Prompts are per-index DB entities; RAG access is gated by a separate `x-rag-key`.
