@@ -32,12 +32,14 @@
 
 <div class="config">
   <label>API base URL <input id="api-base" value="https://3qkikancml.execute-api.us-east-1.amazonaws.com/dev"></label>
-  <label>Index name <input id="index-name" value="phila-services-programs"></label>
+  <label>Index name <input id="index-name" value="phila-gov"></label>
   <label>Search key <input id="search-key" type="password" placeholder="srch_..."></label>
+  <label>Link base for path-style ids <input id="link-base" value="https://www.phila.gov"></label>
 </div>
 
 <form class="search" onsubmit="event.preventDefault(); runSearch();">
   <input type="search" id="q" placeholder="Search…" autofocus>
+  <input type="text" id="kinds" placeholder="kinds (comma-sep)" size="16">
   <select id="mode">
     <option value="hybrid">hybrid</option>
     <option value="lexical">lexical</option>
@@ -54,10 +56,12 @@
   const $searchKey = document.getElementById('search-key');
   const $q = document.getElementById('q');
   const $mode = document.getElementById('mode');
+  const $kinds = document.getElementById('kinds');
+  const $linkBase = document.getElementById('link-base');
   const $results = document.getElementById('results');
 
   // Restore from localStorage
-  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$searchKey, 'searchKey'], [$mode, 'mode']]) {
+  for (const [el, key] of [[$apiBase, 'apiBase'], [$indexName, 'indexName'], [$searchKey, 'searchKey'], [$mode, 'mode'], [$linkBase, 'linkBase']]) {
     const saved = localStorage.getItem('pgsearch:' + key);
     if (saved) el.value = saved;
     el.addEventListener('input', () => localStorage.setItem('pgsearch:' + key, el.value));
@@ -72,7 +76,9 @@
     $results.innerHTML = '<div class="empty">searching…</div>';
     try {
       const mode = $mode.value;
-      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`, {
+      const kinds = $kinds.value.trim();
+      const kindsParam = kinds ? `&kinds=${encodeURIComponent(kinds)}` : '';
+      const res = await fetch(`${base}/public/search/${encodeURIComponent(index)}?q=${encodeURIComponent(q)}&limit=20&mode=${mode}${kindsParam}`, {
         headers: { 'x-search-key': key },
       });
       if (!res.ok) {
@@ -87,11 +93,12 @@
         return;
       }
       $results.innerHTML = results.map(r => {
-        console.dir(r);
-        const rawUrl = r.metadata?.external_id ?? '';
-        console.log(rawUrl)
-        const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : '#';
-        const type = r.metadata?.content_type ?? '';
+        // external_id is the document URL: absolute for tool docs, a site-relative
+        // path for crawled pages (resolved against the configured link base).
+        const rawUrl = r.external_id ?? '';
+        const url = /^https?:\/\//i.test(rawUrl) ? rawUrl
+          : rawUrl.startsWith('/') ? $linkBase.value.replace(/\/$/, '') + rawUrl : '#';
+        const type = r.kind ?? r.metadata?.content_type ?? '';
         const raw = r.snippet ?? '';
         const snippet = raw.slice(0, 300);
         const truncated = raw.length > 300 ? '…' : '';
