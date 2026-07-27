@@ -8,6 +8,8 @@ import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } 
 import { createIndex } from '../services/indexes'
 import { logQuery } from '../services/analytics'
 import { searchRoutes } from '../routes/search'
+import { ValidationError } from '../middleware/validate'
+import { apiError } from '../middleware/error'
 
 describe('analytics schema', () => {
   let pool: Pool
@@ -129,5 +131,110 @@ describe('search capture', () => {
       await teardownSchema()
       await setupSchema()
     }
+  })
+})
+
+describe('feedback postback', () => {
+  let pool: Pool
+  let searchKey: string
+  let otherSearchKey: string
+  let queryId: string
+
+  const app = new Hono()
+  app.route('/', searchRoutes)
+  app.onError((err, c) => {
+    if (err instanceof ValidationError) {
+      return apiError(c, 'VALIDATION_ERROR', err.message)
+    }
+    console.error('Unhandled error:', err)
+    return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
+  })
+
+  beforeAll(async () => {
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    pool = await getTestPool()
+    const created = await createIndex(pool, { name: 'analytics-fb-idx' })
+    searchKey = created!.search_key
+    const other = await createIndex(pool, { name: 'analytics-fb-other' })
+    otherSearchKey = other!.search_key
+
+    const res = await app.request('/public/search/analytics-fb-idx?q=water&mode=lexical', {
+      headers: { 'x-search-key': searchKey },
+    })
+    queryId = ((await res.json()) as { query_id: string }).query_id
+  })
+  afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
+
+  const post = (body: unknown, key = searchKey, index = 'analytics-fb-idx') =>
+    app.request(`/public/search/${index}/events`, {
+      method: 'POST',
+      headers: { 'x-search-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  it('records a feedback event against a query row', async () => {
+    const res = await post({ query_id: queryId, action: 'selected', data: { external_id: 'page-1', rank: 3 } })
+    expect(res.status).toBe(201)
+    const body = await res.json() as { event_id: string }
+
+    const row = await pool.query('SELECT * FROM search_events WHERE event_id = $1', [body.event_id])
+    expect(row.rows[0].query_id).toBe(queryId)
+    expect(row.rows[0].action).toBe('selected')
+    expect(row.rows[0].data).toEqual({ external_id: 'page-1', rank: 3 })
+    // index_id copied from the parent query row
+    const parent = await pool.query('SELECT index_id FROM search_events WHERE event_id = $1', [queryId])
+    expect(row.rows[0].index_id).toBe(parent.rows[0].index_id)
+  })
+
+  it('404s an unknown query_id', async () => {
+    const res = await post({ query_id: '00000000-0000-0000-0000-000000000000', action: 'selected' })
+    expect(res.status).toBe(404)
+  })
+
+  it('404s a query_id belonging to another index', async () => {
+    const res = await post({ query_id: queryId, action: 'selected' }, otherSearchKey, 'analytics-fb-other')
+    expect(res.status).toBe(404)
+  })
+
+  it('404s a query_id that points at a feedback row, not a query row', async () => {
+    const first = await post({ query_id: queryId, action: 'selected' })
+    const { event_id } = await first.json() as { event_id: string }
+    const res = await post({ query_id: event_id, action: 'selected' })
+    expect(res.status).toBe(404)
+  })
+
+  it('400s a missing action', async () => {
+    const res = await post({ query_id: queryId })
+    expect(res.status).toBe(400)
+  })
+
+  it('400s an action over 64 characters', async () => {
+    const res = await post({ query_id: queryId, action: 'a'.repeat(65) })
+    expect(res.status).toBe(400)
+  })
+
+  it('400s a non-uuid query_id', async () => {
+    const res = await post({ query_id: 'not-a-uuid', action: 'selected' })
+    expect(res.status).toBe(400)
+  })
+
+  it('400s data over 4KB serialized', async () => {
+    const res = await post({ query_id: queryId, action: 'selected', data: { blob: 'x'.repeat(5000) } })
+    expect(res.status).toBe(400)
+  })
+
+  it('401s without a search key', async () => {
+    const res = await app.request('/public/search/analytics-fb-idx/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query_id: queryId, action: 'selected' }),
+    })
+    expect(res.status).toBe(401)
   })
 })

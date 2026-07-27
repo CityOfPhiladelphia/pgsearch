@@ -7,11 +7,22 @@ import { withIndex } from '../middleware/deps'
 import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getAdapter } from '../services/adapter'
-import { logQuery } from '../services/analytics'
+import { logQuery, logEvent } from '../services/analytics'
+import { parseBody, ValidationError } from '../middleware/validate'
 import type { AppEnv, RecencyRule } from '../types'
 
 export const searchRoutes = new Hono<AppEnv>()
 searchRoutes.use('/public/search/:name', searchAuth)
+searchRoutes.use('/public/search/:name/events', searchAuth)
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_EVENT_DATA_BYTES = 4096
+
+interface FeedbackBody {
+  query_id: string
+  action: string
+  data?: Record<string, unknown>
+}
 
 searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) => {
   const q = c.req.query('q')
@@ -85,4 +96,21 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   })
 
   return c.json(queryId ? { query_id: queryId, ...results } : results, 200)
+}))
+
+searchRoutes.post('/public/search/:name/events', withIndex(async ({ pool, index }, c) => {
+  const body = await parseBody<FeedbackBody>(c, {
+    query_id: [['typeof', 'string'], ['nonEmpty']],
+    action: [['typeof', 'string'], ['nonEmpty'], ['maxLength', 64]],
+    'data?': ['object'],
+  })
+  if (!UUID_PATTERN.test(body.query_id)) throw new ValidationError('query_id must be a UUID')
+  const data = body.data ?? {}
+  if (JSON.stringify(data).length > MAX_EVENT_DATA_BYTES) {
+    throw new ValidationError(`data must serialize to at most ${MAX_EVENT_DATA_BYTES} bytes`)
+  }
+
+  const eventId = await logEvent(pool, index.index_id, body.query_id, body.action, data)
+  if (!eventId) return apiError(c, 'NOT_FOUND', 'Unknown query_id')
+  return c.json({ event_id: eventId }, 201)
 }))
