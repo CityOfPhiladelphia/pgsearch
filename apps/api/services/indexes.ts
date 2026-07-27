@@ -113,7 +113,9 @@ export async function deleteIndex(pool: Pool, name: string): Promise<boolean> {
 // literal column names listed here.
 export type KeyType = 'index' | 'search' | 'rag' | 'analytics'
 
-const KEY_HASH_COLUMNS: Record<KeyType, 'index_key_hash' | 'search_key_hash' | 'rag_key_hash' | 'analytics_key_hash'> = {
+export type KeyHashColumn = 'index_key_hash' | 'search_key_hash' | 'rag_key_hash' | 'analytics_key_hash'
+
+const KEY_HASH_COLUMNS: Record<KeyType, KeyHashColumn> = {
   index: 'index_key_hash',
   search: 'search_key_hash',
   rag: 'rag_key_hash',

@@ -275,6 +275,7 @@ describe('analytics key admin', () => {
   })
 
   it('revokes the analytics key', async () => {
+    await app.request('/private/key/admin/indexes/analytics-key-idx/analytics-key', { method: 'POST' })
     const res = await app.request('/private/key/admin/indexes/analytics-key-idx/analytics-key', { method: 'DELETE' })
     expect(res.status).toBe(200)
     const row = await pool.query(`SELECT analytics_key_hash FROM search_indexes WHERE name = 'analytics-key-idx'`)
