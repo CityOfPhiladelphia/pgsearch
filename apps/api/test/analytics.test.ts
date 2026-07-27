@@ -376,6 +376,25 @@ describe('analytics pull', () => {
     expect(beforeBody.events).toHaveLength(3)   // to is exclusive
   })
 
+  it('walks a from-filtered range exactly once across pages', async () => {
+    const mid = await pool.query(
+      `SELECT created_at::text AS ts FROM search_events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
+    )
+    const ts = mid.rows[0].ts
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < 10; page++) {
+      const qs = `limit=2&from=${encodeURIComponent(ts)}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}`
+      const res = await pull(qs)
+      const body = await res.json() as { events: any[]; next: string | null }
+      seen.push(...body.events.map(e => e.event_id))
+      cursor = body.next
+      if (!cursor) break
+    }
+    expect(seen).toHaveLength(3)
+    expect(new Set(seen).size).toBe(3)
+  })
+
   it('removes feedback rows when their query row is deleted', async () => {
     const doomed = await logQuery(pool, indexId, { q: 'doomed', total: 0, result_ids: [] })
     await logEvent(pool, indexId, doomed, 'selected', {})
@@ -407,6 +426,12 @@ describe('analytics pull', () => {
     expect(res.status).toBe(401)
   })
 
+  it('400s a well-formed cursor with garbage contents', async () => {
+    const token = Buffer.from(JSON.stringify(['x', 'y'])).toString('base64url')
+    const res = await pull(`after=${token}`)
+    expect(res.status).toBe(400)
+  })
+
   // Must stay the LAST test in this block: it seeds 600 extra rows, which would
   // break the earlier tests' row-count assertions if it ran before them.
   it('clamps limit to 500', async () => {
@@ -420,5 +445,11 @@ describe('analytics pull', () => {
     const body = await res.json() as { events: any[]; next: string | null }
     expect(body.events).toHaveLength(500)
     expect(body.next).not.toBeNull()
+
+    const res2 = await pull(`limit=9999&after=${encodeURIComponent(body.next!)}`)
+    expect(res2.status).toBe(200)
+    const body2 = await res2.json() as { events: any[]; next: string | null }
+    expect(body2.events).toHaveLength(106)
+    expect(body2.next).toBeNull()
   })
 })

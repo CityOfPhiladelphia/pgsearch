@@ -22,8 +22,9 @@ analyticsRoutes.get('/public/analytics/:name/events', withIndex(async ({ pool, i
     }
   }
 
-  const after = c.req.query('after')
-  if (after !== undefined && !decodeCursor(after)) {
+  const afterParam = c.req.query('after')
+  const after = afterParam !== undefined ? decodeCursor(afterParam) : null
+  if (afterParam !== undefined && !after) {
     return apiError(c, 'VALIDATION_ERROR', 'after must be a cursor from a previous response')
   }
 

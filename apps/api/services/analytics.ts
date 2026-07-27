@@ -51,7 +51,7 @@ export interface AnalyticsEvent {
 export interface PullOptions {
   from?: string
   to?: string
-  after?: string
+  after?: { createdAt: string; eventId: string } | null
   limit: number
 }
 
@@ -74,6 +74,8 @@ export function decodeCursor(cursor: string): { createdAt: string; eventId: stri
     if (!Array.isArray(parsed) || parsed.length !== 2) return null
     const [createdAt, eventId] = parsed
     if (typeof createdAt !== 'string' || typeof eventId !== 'string') return null
+    if (Number.isNaN(Date.parse(createdAt))) return null
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)) return null
     return { createdAt, eventId }
   } catch {
     return null
@@ -81,8 +83,10 @@ export function decodeCursor(cursor: string): { createdAt: string; eventId: stri
 }
 
 export async function pullEvents(pool: Pool, indexId: number, options: PullOptions): Promise<PullResult> {
-  const after = options.after ? decodeCursor(options.after) : null
+  const after = options.after ?? null
   // Fetch one extra row to know whether a next page exists.
+  // Unnamed statement on purpose: a prepared/named statement gets a generic plan
+  // where the $n IS NULL guards can't const-fold, dropping the keyset out of the Index Cond.
   const result = await pool.query(
     `SELECT event_id, query_id, action, data, created_at, created_at::text AS created_at_text
      FROM search_events
