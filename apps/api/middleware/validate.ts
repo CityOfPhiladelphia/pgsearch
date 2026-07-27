@@ -21,6 +21,7 @@ export type Rule =
   | readonly ['typeof', 'string' | 'number' | 'boolean']
   | readonly ['oneOf', readonly unknown[]]
   | readonly ['min', number]
+  | readonly ['maxLength', number]
   | readonly ['nonEmpty']
   | readonly ['array']
   | readonly ['object']
@@ -103,6 +104,11 @@ function applyRule(value: unknown, rule: Rule, key: string): string | null {
     case 'min':
       if (typeof value !== 'number' || value < rule[1]) {
         return `${key} must be >= ${rule[1]}`
+      }
+      return null
+    case 'maxLength':
+      if (typeof value !== 'string' || value.length > rule[1]) {
+        return `${key} must be at most ${rule[1]} characters`
       }
       return null
     case 'nonEmpty':

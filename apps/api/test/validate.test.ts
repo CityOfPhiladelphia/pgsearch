@@ -94,6 +94,18 @@ describe('validate', () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.message).toMatch(/obj\.x is required/)
   })
+
+  describe('maxLength rule', () => {
+    it('accepts a string at the limit', () => {
+      const result = validate({ action: 'a'.repeat(64) }, { action: ['maxLength', 64] })
+      expect(result.ok).toBe(true)
+    })
+
+    it('rejects a string over the limit', () => {
+      const result = validate({ action: 'a'.repeat(65) }, { action: ['maxLength', 64] })
+      expect(result).toEqual({ ok: false, message: 'action must be at most 64 characters' })
+    })
+  })
 })
 
 describe('assertValid', () => {
