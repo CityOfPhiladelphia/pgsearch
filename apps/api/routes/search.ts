@@ -66,23 +66,23 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
     }
   }
 
+  const query = q.trim()
   const adapter = getAdapter(index.config)
-  const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, kindWeights, recency, kinds })
+  const results = await hybridSearch(pool, index, adapter, query, { limit, mode: modeParam, kindWeights, recency, kinds })
 
   // Capture failures degrade to a response without query_id — analytics never breaks search.
-  let queryId: string | undefined
-  try {
-    queryId = await logQuery(pool, index.index_id, {
-      q: q.trim(),
-      mode: modeParam ?? 'hybrid',
-      kinds: kinds ?? null,
-      limit,
-      total: results.total,
-      result_ids: results.results.map(r => r.external_id),
-    })
-  } catch (err) {
+  // Awaited, not fire-and-forget: Lambda freezes the container after the response, dropping in-flight writes.
+  const queryId = await logQuery(pool, index.index_id, {
+    q: query,
+    mode: modeParam ?? 'hybrid',
+    kinds: kinds ?? null,
+    limit,
+    total: results.total,
+    result_ids: results.results.map(r => r.external_id),
+  }).catch((err: unknown) => {
     console.error('analytics capture failed:', err)
-  }
+    return undefined
+  })
 
   return c.json(queryId ? { query_id: queryId, ...results } : results, 200)
 }))

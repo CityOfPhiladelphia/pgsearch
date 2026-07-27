@@ -118,8 +118,10 @@ describe('search capture', () => {
     try {
       const res = await search('q=water&mode=lexical')
       expect(res.status).toBe(200)
-      const body = await res.json() as { query_id?: string }
+      const body = await res.json() as { query_id?: string; total: number; results: unknown[] }
       expect(body.query_id).toBeUndefined()
+      expect(body.total).toBe(0)
+      expect(body.results).toEqual([])
       expect(errors).toHaveBeenCalledOnce()
       expect(String(errors.mock.calls[0][0])).toContain('analytics')
     } finally {
