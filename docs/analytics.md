@@ -13,11 +13,12 @@ Every search is logged as an event, and consumers can post feedback against it (
 
 ## Query capture
 
-Every `GET /public/search/:name` call logs a query row: `q`, `mode`, `kinds`, `limit`, `total`, and `result_ids` (the returned result order, by `external_id`). The response carries the new `query_id` alongside the normal search response body:
+Every `GET /public/search/:name` call logs a query row: `q`, `mode`, `kinds`, `limit`, `total`, and `result_ids` (the returned result order, by `external_id`). The response carries a `query_id` alongside the normal search response body:
 
 ```json
 {
   "query_id": "3fa2c1a0-1e2d-4b3a-9c5e-1234567890ab",
+  "query": "parking permit",
   "total": 8,
   "results": [ { "external_id": "page-1", "score": 0.83, "...": "..." } ]
 }
@@ -52,15 +53,15 @@ curl "https://<api-url>/public/analytics/my-index/events?from=2026-07-01T00:00:0
 ```json
 {
   "events": [
-    { "event_id": "...", "query_id": null, "action": "search", "data": { "q": "parking permit", "...": "..." }, "created_at": "2026-07-01T12:03:04.123456Z" },
-    { "event_id": "...", "query_id": "3fa2c1a0-...", "action": "click", "data": { "external_id": "page-1" }, "created_at": "2026-07-01T12:03:09.881000Z" }
+    { "event_id": "...", "query_id": null, "action": "search", "data": { "q": "parking permit", "...": "..." }, "created_at": "2026-07-01T12:03:04.123Z" },
+    { "event_id": "...", "query_id": "3fa2c1a0-...", "action": "click", "data": { "external_id": "page-1" }, "created_at": "2026-07-01T12:03:09.881Z" }
   ],
-  "next": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wNy0wMVQxMjowMzowOS44ODEwMDAiLCJldmVudF9pZCI6Ii4uLiJ9"
+  "next": "WyIyMDI2LTA3…"
 }
 ```
 
 - `from`/`to` bound a half-open ISO 8601 range (`created_at >= from`, `created_at < to`); both are optional.
-- `after` is the opaque cursor from a previous response's `next`; pass it back verbatim to continue. It's rejected as a `400 VALIDATION_ERROR` if it isn't a cursor this endpoint issued.
+- `after` is the opaque cursor from a previous response's `next`; pass it back verbatim to continue. Malformed cursors are rejected as a `400 VALIDATION_ERROR`.
 - `limit` defaults to 500 and is clamped to a maximum of 500.
 - Rows are flat and ungrouped — query rows and feedback rows come back interleaved in `created_at, event_id` order. Consumers group feedback under its query by matching `query_id` back to the query row's `event_id` client-side.
 
