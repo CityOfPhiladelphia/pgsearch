@@ -8,6 +8,7 @@ import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } 
 import { createIndex } from '../services/indexes'
 import { logQuery } from '../services/analytics'
 import { searchRoutes } from '../routes/search'
+import { adminRoutes } from '../routes/admin'
 import { ValidationError } from '../middleware/validate'
 import { apiError } from '../middleware/error'
 
@@ -241,5 +242,47 @@ describe('feedback postback', () => {
       body: JSON.stringify({ query_id: queryId, action: 'selected' }),
     })
     expect(res.status).toBe(401)
+  })
+})
+
+describe('analytics key admin', () => {
+  let pool: Pool
+
+  const app = new Hono()
+  app.route('/', adminRoutes)
+
+  beforeAll(async () => {
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    pool = await getTestPool()
+    await createIndex(pool, { name: 'analytics-key-idx' })
+  })
+  afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
+
+  it('mints an anly_-prefixed analytics key and stores its hash', async () => {
+    const res = await app.request('/private/key/admin/indexes/analytics-key-idx/analytics-key', { method: 'POST' })
+    expect(res.status).toBe(201)
+    const body = await res.json() as { analytics_key: string }
+    expect(body.analytics_key).toMatch(/^anly_/)
+
+    const row = await pool.query(`SELECT analytics_key_hash FROM search_indexes WHERE name = 'analytics-key-idx'`)
+    expect(row.rows[0].analytics_key_hash).not.toBeNull()
+  })
+
+  it('revokes the analytics key', async () => {
+    const res = await app.request('/private/key/admin/indexes/analytics-key-idx/analytics-key', { method: 'DELETE' })
+    expect(res.status).toBe(200)
+    const row = await pool.query(`SELECT analytics_key_hash FROM search_indexes WHERE name = 'analytics-key-idx'`)
+    expect(row.rows[0].analytics_key_hash).toBeNull()
+  })
+
+  it('404s minting for a missing index', async () => {
+    const res = await app.request('/private/key/admin/indexes/nope/analytics-key', { method: 'POST' })
+    expect(res.status).toBe(404)
   })
 })

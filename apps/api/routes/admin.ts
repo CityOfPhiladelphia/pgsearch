@@ -80,3 +80,17 @@ adminRoutes.delete('/private/key/admin/indexes/:name/rag-key', withPool(async ({
   if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
   return c.json({ revoked: true })
 }))
+
+adminRoutes.post('/private/key/admin/indexes/:name/analytics-key', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const result = await mintKey(pool, name, 'analytics')
+  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ analytics_key: result.key }, 201)
+}))
+
+adminRoutes.delete('/private/key/admin/indexes/:name/analytics-key', withPool(async ({ pool }, c) => {
+  const name = c.req.param('name')!
+  const revoked = await revokeKey(pool, name, 'analytics')
+  if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+  return c.json({ revoked: true })
+}))

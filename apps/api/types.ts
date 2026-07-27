@@ -35,6 +35,7 @@ export interface SearchIndex {
   index_key_hash: string
   search_key_hash: string
   rag_key_hash: string | null
+  analytics_key_hash: string | null
   total_documents: number
   created_at: string
   updated_at: string

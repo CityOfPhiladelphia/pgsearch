@@ -109,20 +109,22 @@ export async function deleteIndex(pool: Pool, name: string): Promise<boolean> {
 // Per-index credentials.
 // Each key type maps to its hash column on search_indexes and a token prefix.
 // Both lookups are over typed const objects, so the SQL column interpolation
-// below is safe-by-construction — the value can only ever be one of the three
+// below is safe-by-construction — the value can only ever be one of the four
 // literal column names listed here.
-export type KeyType = 'index' | 'search' | 'rag'
+export type KeyType = 'index' | 'search' | 'rag' | 'analytics'
 
-const KEY_HASH_COLUMNS: Record<KeyType, 'index_key_hash' | 'search_key_hash' | 'rag_key_hash'> = {
+const KEY_HASH_COLUMNS: Record<KeyType, 'index_key_hash' | 'search_key_hash' | 'rag_key_hash' | 'analytics_key_hash'> = {
   index: 'index_key_hash',
   search: 'search_key_hash',
   rag: 'rag_key_hash',
+  analytics: 'analytics_key_hash',
 }
 
 const KEY_PREFIXES: Record<KeyType, string> = {
   index: 'idx',
   search: 'srch',
   rag: 'rag',
+  analytics: 'anly',
 }
 
 export interface MintKeyResult {
