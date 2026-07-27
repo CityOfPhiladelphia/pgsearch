@@ -29,6 +29,7 @@ export async function setupSchema(): Promise<void> {
 
 export async function teardownSchema(): Promise<void> {
   const p = await getTestPool()
+  await p.query('DROP TABLE IF EXISTS search_events CASCADE')
   await p.query('DROP TABLE IF EXISTS search_segments CASCADE')
   await p.query('DROP TABLE IF EXISTS search_documents CASCADE')
   await p.query('DROP TABLE IF EXISTS rag_prompts CASCADE')
@@ -44,6 +45,7 @@ export async function cleanupTestData(): Promise<void> {
   for (const row of indexes.rows) {
     await p.query(`DROP INDEX IF EXISTS idx_segments_embedding_${row.index_id}`)
   }
+  await p.query('DELETE FROM search_events')
   await p.query('DELETE FROM search_segments')
   await p.query('DELETE FROM search_documents')
   await p.query('DELETE FROM rag_prompts')

@@ -107,4 +107,19 @@ export const migrations: Migration[] = [
     description: 'Index document kind for kinds-filtered search and per-kind listings',
     sql: `CREATE INDEX IF NOT EXISTS idx_documents_index_kind ON search_documents (index_id, kind);`,
   },
+  {
+    version: 10,
+    description: 'Analytics event log and per-index analytics key',
+    sql: `CREATE TABLE IF NOT EXISTS search_events (
+              event_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              index_id    INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
+              query_id    UUID REFERENCES search_events(event_id) ON DELETE CASCADE,
+              action      TEXT NOT NULL,
+              data        JSONB NOT NULL DEFAULT '{}',
+              created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_events_index_created ON search_events (index_id, created_at, event_id);
+          CREATE INDEX IF NOT EXISTS idx_events_query ON search_events (query_id);
+          ALTER TABLE search_indexes ADD COLUMN IF NOT EXISTS analytics_key_hash TEXT;`,
+  },
 ]
