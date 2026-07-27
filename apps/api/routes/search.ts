@@ -7,6 +7,7 @@ import { withIndex } from '../middleware/deps'
 import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getAdapter } from '../services/adapter'
+import { logQuery } from '../services/analytics'
 import type { AppEnv, RecencyRule } from '../types'
 
 export const searchRoutes = new Hono<AppEnv>()
@@ -67,5 +68,21 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
 
   const adapter = getAdapter(index.config)
   const results = await hybridSearch(pool, index, adapter, q.trim(), { limit, mode: modeParam, kindWeights, recency, kinds })
-  return c.json(results, 200)
+
+  // Capture failures degrade to a response without query_id — analytics never breaks search.
+  let queryId: string | undefined
+  try {
+    queryId = await logQuery(pool, index.index_id, {
+      q: q.trim(),
+      mode: modeParam ?? 'hybrid',
+      kinds: kinds ?? null,
+      limit,
+      total: results.total,
+      result_ids: results.results.map(r => r.external_id),
+    })
+  } catch (err) {
+    console.error('analytics capture failed:', err)
+  }
+
+  return c.json(queryId ? { query_id: queryId, ...results } : results, 200)
 }))

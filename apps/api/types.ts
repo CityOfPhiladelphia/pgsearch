@@ -103,6 +103,7 @@ export interface SearchResult {
 }
 
 export interface SearchResponse {
+  query_id?: string
   results: SearchResult[]
   total: number
   query: string
