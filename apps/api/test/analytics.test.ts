@@ -6,9 +6,10 @@ import type { Pool } from 'pg'
 import { Hono } from 'hono'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex } from '../services/indexes'
-import { logQuery } from '../services/analytics'
+import { logQuery, logEvent } from '../services/analytics'
 import { searchRoutes } from '../routes/search'
 import { adminRoutes } from '../routes/admin'
+import { analyticsRoutes } from '../routes/analytics'
 import { ValidationError } from '../middleware/validate'
 import { apiError } from '../middleware/error'
 
@@ -205,7 +206,10 @@ describe('feedback postback', () => {
 
   it('404s a query_id that points at a feedback row, not a query row', async () => {
     const first = await post({ query_id: queryId, action: 'selected' })
+    expect(first.status).toBe(201)
     const { event_id } = await first.json() as { event_id: string }
+    const stored = await pool.query('SELECT data FROM search_events WHERE event_id = $1', [event_id])
+    expect(stored.rows[0].data).toEqual({})
     const res = await post({ query_id: event_id, action: 'selected' })
     expect(res.status).toBe(404)
   })
@@ -285,5 +289,136 @@ describe('analytics key admin', () => {
   it('404s minting for a missing index', async () => {
     const res = await app.request('/private/key/admin/indexes/nope/analytics-key', { method: 'POST' })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('analytics pull', () => {
+  let pool: Pool
+  let indexId: number
+  let analyticsKey: string
+  let queryIds: string[] = []
+
+  const app = new Hono()
+  app.route('/', analyticsRoutes)
+
+  const adminApp = new Hono()
+  adminApp.route('/', adminRoutes)
+
+  beforeAll(async () => {
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    pool = await getTestPool()
+    await createIndex(pool, { name: 'analytics-pull-idx' })
+    const idxRow = await pool.query(`SELECT index_id FROM search_indexes WHERE name = 'analytics-pull-idx'`)
+    indexId = idxRow.rows[0].index_id
+
+    const mint = await adminApp.request('/private/key/admin/indexes/analytics-pull-idx/analytics-key', { method: 'POST' })
+    analyticsKey = ((await mint.json()) as { analytics_key: string }).analytics_key
+
+    // 5 query rows, one with a feedback child → 6 events total
+    queryIds = []
+    for (let i = 0; i < 5; i++) {
+      queryIds.push(await logQuery(pool, indexId, { q: `query ${i}`, total: 0, result_ids: [] }))
+    }
+    await logEvent(pool, indexId, queryIds[0], 'selected', { external_id: 'x', rank: 1 })
+  })
+  afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
+
+  const pull = (qs = '', key = analyticsKey) =>
+    app.request(`/public/analytics/analytics-pull-idx/events${qs ? `?${qs}` : ''}`, {
+      headers: { 'x-analytics-key': key },
+    })
+
+  it('returns flat rows of both shapes in created_at order', async () => {
+    const res = await pull()
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: any[]; next: string | null }
+    expect(body.events).toHaveLength(6)
+    expect(body.next).toBeNull()
+    const actions = body.events.map(e => e.action)
+    expect(actions.filter(a => a === 'search')).toHaveLength(5)
+    expect(actions.filter(a => a === 'selected')).toHaveLength(1)
+    const feedback = body.events.find(e => e.action === 'selected')
+    expect(feedback.query_id).toBe(queryIds[0])
+    // row shape: index_id omitted
+    expect(Object.keys(body.events[0]).sort()).toEqual(['action', 'created_at', 'data', 'event_id', 'query_id'])
+  })
+
+  it('walks every row exactly once across pages', async () => {
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let page = 0; page < 10; page++) {
+      const res = await pull(`limit=2${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}`)
+      const body = await res.json() as { events: any[]; next: string | null }
+      seen.push(...body.events.map(e => e.event_id))
+      cursor = body.next
+      if (!cursor) break
+    }
+    expect(seen).toHaveLength(6)
+    expect(new Set(seen).size).toBe(6)
+  })
+
+  it('filters by half-open date range', async () => {
+    const mid = await pool.query(
+      `SELECT created_at::text AS ts FROM search_events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
+    )
+    const ts = mid.rows[0].ts
+    const before = await pull(`to=${encodeURIComponent(ts)}`)
+    const after = await pull(`from=${encodeURIComponent(ts)}`)
+    const beforeBody = await before.json() as { events: any[] }
+    const afterBody = await after.json() as { events: any[] }
+    expect(beforeBody.events.length + afterBody.events.length).toBe(6)
+    expect(beforeBody.events).toHaveLength(3)   // to is exclusive
+  })
+
+  it('removes feedback rows when their query row is deleted', async () => {
+    const doomed = await logQuery(pool, indexId, { q: 'doomed', total: 0, result_ids: [] })
+    await logEvent(pool, indexId, doomed, 'selected', {})
+    await pool.query('DELETE FROM search_events WHERE event_id = $1', [doomed])
+    const orphans = await pool.query('SELECT * FROM search_events WHERE query_id = $1', [doomed])
+    expect(orphans.rows).toHaveLength(0)
+  })
+
+  it('400s an unparseable from', async () => {
+    const res = await pull('from=yesterday')
+    expect(res.status).toBe(400)
+  })
+
+  it('400s a malformed after cursor', async () => {
+    const res = await pull('after=garbage')
+    expect(res.status).toBe(400)
+  })
+
+  it('401s with no analytics key minted', async () => {
+    await createIndex(pool, { name: 'analytics-pull-nokey' })
+    const res = await app.request('/public/analytics/analytics-pull-nokey/events', {
+      headers: { 'x-analytics-key': analyticsKey },
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('401s a wrong key', async () => {
+    const res = await pull('', 'anly_wrong')
+    expect(res.status).toBe(401)
+  })
+
+  // Must stay the LAST test in this block: it seeds 600 extra rows, which would
+  // break the earlier tests' row-count assertions if it ran before them.
+  it('clamps limit to 500', async () => {
+    await pool.query(
+      `INSERT INTO search_events (index_id, action, data)
+       SELECT $1, 'search', '{}' FROM generate_series(1, 600)`,
+      [indexId],
+    )
+    const res = await pull('limit=9999')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: any[]; next: string | null }
+    expect(body.events).toHaveLength(500)
+    expect(body.next).not.toBeNull()
   })
 })

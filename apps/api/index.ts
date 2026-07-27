@@ -9,6 +9,7 @@ import { ingestRoutes } from './routes/ingest'
 import { searchRoutes } from './routes/search'
 import { promptsRoutes } from './routes/prompts'
 import { ragRoutes } from './routes/rag'
+import { analyticsRoutes } from './routes/analytics'
 import { healthRoutes } from './routes/health'
 import { getPool, registerVectorType } from './db/pool'
 import { runMigrations } from './db/migrate'
@@ -20,7 +21,7 @@ export const app = new Hono()
 app.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-index-key', 'x-search-key', 'x-rag-key'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-index-key', 'x-search-key', 'x-rag-key', 'x-analytics-key'],
 }))
 
 app.use('*', async (c, next) => {
@@ -36,6 +37,7 @@ app.route('/', ingestRoutes)
 app.route('/', searchRoutes)
 app.route('/', promptsRoutes)
 app.route('/', ragRoutes)
+app.route('/', analyticsRoutes)
 
 app.onError((err, c) => {
   if (err instanceof ValidationError) {
