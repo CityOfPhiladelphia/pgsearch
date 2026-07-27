@@ -54,7 +54,7 @@ CREATE TABLE search_events (
     data        JSONB NOT NULL DEFAULT '{}',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_events_index_created ON search_events (index_id, created_at);
+CREATE INDEX idx_events_index_created ON search_events (index_id, created_at, event_id);
 CREATE INDEX idx_events_query ON search_events (query_id);
 ```
 
@@ -94,14 +94,14 @@ Request body:
 ```
 
 - `query_id` required, must be a UUID; `action` required, ≤ 64 chars; `data` optional object, ≤ 4KB serialized.
-- Insert is a single `INSERT ... SELECT` copying `index_id` from the parent row where `event_id = query_id AND index_id = <authenticated index>`. Zero rows inserted → `404 NOT_FOUND`. This makes existence check and cross-index rejection one statement — a `query_id` from index A posted with index B's search key is a 404, with no FK-violation error mapping.
+- Insert is a single `INSERT ... SELECT` copying `index_id` from the parent row where `event_id = query_id AND index_id = <authenticated index> AND query_id IS NULL` — the parent must be a query row, so feedback cannot chain to feedback. Zero rows inserted → `404 NOT_FOUND`. This makes existence check and cross-index rejection one statement — a `query_id` from index A posted with index B's search key is a 404, with no FK-violation error mapping.
 - Success: `201 { event_id }`.
 
 ### Analytics pull (new)
 
 `GET /public/analytics/:name/events?from=<iso>&to=<iso>&after=<cursor>&limit=<n>`, behind new `analyticsAuth` middleware (`x-analytics-key` → `analytics_key_hash`) — one union-member and one exported const added to the existing `keyAuth` factory in `middleware/auth.ts`.
 
-- `from`/`to` optional ISO 8601 timestamps filtering `created_at`.
+- `from`/`to` optional ISO 8601 timestamps filtering `created_at`, half-open: `created_at >= from AND created_at < to`.
 - Keyset pagination on `(created_at, event_id)`: `limit` defaults to 500, max 500; response includes `next` cursor (opaque encoding of the last row's `created_at` + `event_id`) when more rows exist. Offset pagination is excluded: API Gateway REST v1 buffers responses with a 10MB cap, so unbounded pages are not an option.
 - Returns flat rows — query rows and feedback rows interleaved in `created_at` order; consumers group by `query_id` client-side. No server-side nesting: flat rows keep pagination trivial (no parent/child straddling page boundaries) and make single-action pulls ("all `selected` events this month") the same endpoint.
 
