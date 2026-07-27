@@ -229,6 +229,11 @@ describe('feedback postback', () => {
     expect(res.status).toBe(400)
   })
 
+  it('400s data over 4KB in bytes even when under 4096 characters', async () => {
+    const res = await post({ query_id: queryId, action: 'selected', data: { blob: '水'.repeat(2000) } })
+    expect(res.status).toBe(400)
+  })
+
   it('401s without a search key', async () => {
     const res = await app.request('/public/search/analytics-fb-idx/events', {
       method: 'POST',

@@ -104,9 +104,10 @@ searchRoutes.post('/public/search/:name/events', withIndex(async ({ pool, index 
     action: [['typeof', 'string'], ['nonEmpty'], ['maxLength', 64]],
     'data?': ['object'],
   })
+  // Malformed UUIDs would otherwise surface as a Postgres cast error (500), not a 400.
   if (!UUID_PATTERN.test(body.query_id)) throw new ValidationError('query_id must be a UUID')
   const data = body.data ?? {}
-  if (JSON.stringify(data).length > MAX_EVENT_DATA_BYTES) {
+  if (Buffer.byteLength(JSON.stringify(data)) > MAX_EVENT_DATA_BYTES) {
     throw new ValidationError(`data must serialize to at most ${MAX_EVENT_DATA_BYTES} bytes`)
   }
 
