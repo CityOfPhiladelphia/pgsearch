@@ -7,7 +7,7 @@ import { withIndex } from '../middleware/deps'
 import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getAdapter } from '../services/adapter'
-import { logQuery, logEvent } from '../services/analytics'
+import { logQuery, logEvent, UUID_PATTERN } from '../services/analytics'
 import { parseBody, ValidationError } from '../middleware/validate'
 import type { AppEnv, RecencyRule } from '../types'
 
@@ -15,7 +15,6 @@ export const searchRoutes = new Hono<AppEnv>()
 searchRoutes.use('/public/search/:name', searchAuth)
 searchRoutes.use('/public/search/:name/events', searchAuth)
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_EVENT_DATA_BYTES = 4096
 
 interface FeedbackBody {

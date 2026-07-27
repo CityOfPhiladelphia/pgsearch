@@ -67,6 +67,14 @@ function encodeCursor(createdAtText: string, eventId: string): string {
   return Buffer.from(JSON.stringify([createdAtText, eventId])).toString('base64url')
 }
 
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Postgres created_at::text format, e.g. "2026-07-27 14:03:07.123456+00" — the
+// exact shape this service issues cursors in. Date.parse is too permissive
+// (accepts strings like "1" that ::timestamptz rejects), and normalizing
+// through toISOString() would truncate microseconds and break the keyset.
+const CURSOR_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?\+\d{2}(:\d{2})?$/
+
 // Returns null on any malformed token; callers translate to a validation error.
 export function decodeCursor(cursor: string): { createdAt: string; eventId: string } | null {
   try {
@@ -74,8 +82,8 @@ export function decodeCursor(cursor: string): { createdAt: string; eventId: stri
     if (!Array.isArray(parsed) || parsed.length !== 2) return null
     const [createdAt, eventId] = parsed
     if (typeof createdAt !== 'string' || typeof eventId !== 'string') return null
-    if (Number.isNaN(Date.parse(createdAt))) return null
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)) return null
+    if (!CURSOR_TIMESTAMP_PATTERN.test(createdAt)) return null
+    if (!UUID_PATTERN.test(eventId)) return null
     return { createdAt, eventId }
   } catch {
     return null

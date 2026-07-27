@@ -10,17 +10,27 @@ import type { AppEnv } from '../types'
 
 const MAX_PULL_LIMIT = 500
 
+// Date.parse falls back to a lenient, implementation-defined parser for any
+// string outside the ECMA-262 Date Time String Format (e.g. "1" silently
+// becomes 2001-01-01) — so Date.parse alone can't reject what Postgres would.
+// Requiring this shape first keeps Date.parse in its spec-compliant path.
+const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?([Zz]|[+-]\d{2}(:?\d{2})?)?)?$/
+
 export const analyticsRoutes = new Hono<AppEnv>()
 analyticsRoutes.use('/public/analytics/:name/events', analyticsAuth)
 
 analyticsRoutes.get('/public/analytics/:name/events', withIndex(async ({ pool, index }, c) => {
-  const from = c.req.query('from')
-  const to = c.req.query('to')
-  for (const [label, value] of [['from', from], ['to', to]] as const) {
-    if (value !== undefined && Number.isNaN(Date.parse(value))) {
+  const fromParam = c.req.query('from')
+  const toParam = c.req.query('to')
+  for (const [label, value] of [['from', fromParam], ['to', toParam]] as const) {
+    if (value !== undefined && (!TIMESTAMP_PATTERN.test(value) || Number.isNaN(Date.parse(value)))) {
       return apiError(c, 'VALIDATION_ERROR', `${label} must be an ISO 8601 timestamp`)
     }
   }
+  // Normalized before it reaches Postgres — passing the raw string through
+  // would make Postgres re-parse it, reopening the same ambiguity.
+  const from = fromParam !== undefined ? new Date(fromParam).toISOString() : undefined
+  const to = toParam !== undefined ? new Date(toParam).toISOString() : undefined
 
   const afterParam = c.req.query('after')
   const after = afterParam !== undefined ? decodeCursor(afterParam) : null

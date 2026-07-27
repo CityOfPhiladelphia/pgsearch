@@ -432,6 +432,34 @@ describe('analytics pull', () => {
     expect(res.status).toBe(400)
   })
 
+  it('400s a from value Date.parse accepts but Postgres would not', async () => {
+    const res = await pull('from=1')
+    expect(res.status).toBe(400)
+  })
+
+  it('400s a cursor whose timestamp is not in issued format', async () => {
+    const token = Buffer.from(JSON.stringify(['1', '00000000-0000-0000-0000-000000000000'])).toString('base64url')
+    const res = await pull(`after=${token}`)
+    expect(res.status).toBe(400)
+  })
+
+  it('scopes a pull to the authenticated index only', async () => {
+    await createIndex(pool, { name: 'analytics-pull-other' })
+    const otherIdxRow = await pool.query(`SELECT index_id FROM search_indexes WHERE name = 'analytics-pull-other'`)
+    const otherIndexId = otherIdxRow.rows[0].index_id
+    const otherMint = await adminApp.request('/private/key/admin/indexes/analytics-pull-other/analytics-key', { method: 'POST' })
+    const otherKey = ((await otherMint.json()) as { analytics_key: string }).analytics_key
+    await logQuery(pool, otherIndexId, { q: 'other index query', total: 0, result_ids: [] })
+
+    const res = await app.request('/public/analytics/analytics-pull-other/events', {
+      headers: { 'x-analytics-key': otherKey },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: any[]; next: string | null }
+    expect(body.events).toHaveLength(1)
+    expect(body.events[0].data).toEqual({ q: 'other index query', total: 0, result_ids: [] })
+  })
+
   // Must stay the LAST test in this block: it seeds 600 extra rows, which would
   // break the earlier tests' row-count assertions if it ran before them.
   it('clamps limit to 500', async () => {
