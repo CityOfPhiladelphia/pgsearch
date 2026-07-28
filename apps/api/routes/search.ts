@@ -7,7 +7,7 @@ import { withIndex } from '../middleware/deps'
 import { hybridSearch, type SearchMode } from '../services/search'
 import { apiError } from '../middleware/error'
 import { getAdapter } from '../services/adapter'
-import { logQuery, logEvent, UUID_PATTERN } from '../services/analytics'
+import { logQuery, logEvent } from '../services/analytics'
 import { parseBody, ValidationError } from '../middleware/validate'
 import * as param from '../middleware/params'
 import type { AppEnv } from '../types'
@@ -60,8 +60,6 @@ searchRoutes.post('/public/search/:name/events', withIndex(async ({ pool, index 
     action: [['typeof', 'string'], ['nonEmpty'], ['maxLength', 64]],
     'data?': ['object'],
   })
-  // Malformed UUIDs would otherwise surface as a Postgres cast error (500), not a 400.
-  if (!UUID_PATTERN.test(body.group_id)) throw new ValidationError('group_id must be a UUID')
   const data = body.data ?? {}
   if (Buffer.byteLength(JSON.stringify(data)) > MAX_EVENT_DATA_BYTES) {
     throw new ValidationError(`data must serialize to at most ${MAX_EVENT_DATA_BYTES} bytes`)

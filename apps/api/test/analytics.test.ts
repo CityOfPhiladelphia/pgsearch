@@ -217,9 +217,9 @@ describe('feedback postback', () => {
     expect(res.status).toBe(400)
   })
 
-  it('400s a non-uuid group_id', async () => {
+  it('404s a non-uuid group_id — it cannot reference any anchor', async () => {
     const res = await post({ group_id: 'not-a-uuid', action: 'selected' })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(404)
   })
 
   it('400s data over 4KB serialized', async () => {

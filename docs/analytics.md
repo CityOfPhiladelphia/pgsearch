@@ -40,8 +40,8 @@ curl -X POST https://<api-url>/public/search/my-index/events \
 # → 201 {"event_id":"..."}
 ```
 
-- `group_id` must be a UUID; `action` is required, non-empty, and capped at 64 characters; `data` is optional and capped at 4KB of serialized JSON.
-- The `group_id` must reference an anchor event in the authenticated index. An unknown ID, a group_id from another index, and a group_id that's actually a feedback row all return the same `404 NOT_FOUND` — the endpoint doesn't distinguish them, so it can't leak whether an ID exists elsewhere.
+- `action` is required, non-empty, and capped at 64 characters; `data` is optional and capped at 4KB of serialized JSON.
+- The `group_id` must reference an anchor event in the authenticated index. An unknown ID, a malformed one, a group_id from another index, and a group_id that's actually a feedback row all return the same `404 NOT_FOUND` — the endpoint doesn't distinguish them, so it can't leak whether an ID exists elsewhere.
 
 ## Pull events
 

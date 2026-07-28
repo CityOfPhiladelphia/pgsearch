@@ -40,8 +40,13 @@ export async function logEvent(
      WHERE event_id = $1 AND index_id = $2 AND group_id = event_id
      RETURNING event_id`,
     [groupId, indexId, action, JSON.stringify(data)],
-  )
-  return result.rows[0]?.event_id ?? null
+  ).catch((err: unknown) => {
+    // A malformed group_id fails the uuid cast (SQLSTATE class 22) — it cannot
+    // reference any anchor, so it lands in the same null as no row matched.
+    if (String((err as { code?: string }).code).startsWith('22')) return null
+    throw err
+  })
+  return result?.rows[0]?.event_id ?? null
 }
 
 export interface AnalyticsEvent {
@@ -70,8 +75,6 @@ export interface PullResult {
 function encodeCursor(createdAtText: string, eventId: string): string {
   return Buffer.from(JSON.stringify([createdAtText, eventId])).toString('base64url')
 }
-
-export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Returns null when the token isn't a base64url JSON pair of strings. Content
 // is not inspected here — Postgres parses the timestamp and uuid casts, and
