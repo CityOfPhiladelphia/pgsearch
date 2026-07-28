@@ -5,6 +5,8 @@
 
 This guide covers how to get content into pgsearch: the document model, the ingestion API, how body text is segmented for embedding, and the `@phila/search-parse` library for extracting structured documents from HTML.
 
+pgsearch is push-only: it never fetches, crawls, or schedules. You own content acquisition, extraction, identity (`external_id`), classification (`kind`), freshness, and deletion; the service owns segmentation, content hashing, embedding, tsvectors, and storage. The split is deliberate — because the engine is agnostic to where content comes from, a crawler, a CMS webhook, and a nightly batch job all integrate the same way: parse, POST, reconcile.
+
 ## Document Model
 
 A document in pgsearch has five fields:
@@ -15,7 +17,7 @@ A document in pgsearch has five fields:
 | `title` | Yes | Document title. Weighted 3x in keyword search by default. Prepended to each segment before embedding. |
 | `body` | Yes | Document content as plain text or markdown. Automatically chunked into segments. |
 | `kind` | No | Freeform content-stratum label (e.g. `services`, `documents`, `posts`). Returned on search results and matched against the index's `kind_weights` — see [Result-Type Weighting](search.md#result-type-weighting). Omitting it on re-ingest clears it, like every other document field. |
-| `metadata` | No | Arbitrary JSON. Passed through to search results unchanged. Use for source URLs, content types, tags — anything your consumer needs. |
+| `metadata` | No | Arbitrary JSON. Passed through to search results unchanged. Use for source URLs, content types, tags — anything your consumer needs. The engine reads exactly one key: a `Date.parse`-able `metadata.published_at` feeds [recency scoring](search.md#recency) when the index has a recency rule — stamp it on dated content if you want time-sensitive ranking. |
 
 ## Ingestion API
 
@@ -51,6 +53,8 @@ Response:
 ```
 
 Re-ingesting a document with the same `external_id` within an index updates the existing document. Each segment is SHA256 content-hashed — only segments whose content actually changed are re-embedded. This saves embedding API costs on large re-ingestion runs.
+
+The practical contract behind the hashing: re-POSTing unchanged documents is always safe and nearly free, so you don't need change tracking on your side to be *correct* — a dumb "re-POST everything" loop converges to the right index. The state export below exists to make that loop *efficient* (skip the POSTs for unchanged content) and to find deletions, which no amount of re-POSTing reveals.
 
 ### Delete a Document
 
