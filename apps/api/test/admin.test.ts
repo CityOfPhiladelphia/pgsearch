@@ -76,4 +76,26 @@ describe('admin routes', () => {
     const body = await res.json() as { error: { code: string } }
     expect(body.error.code).toBe('NOT_FOUND')
   })
+
+  it('mints and revokes a RAG key', async () => {
+    await createIndex(pool, { name: 'rag-key-test' })
+
+    const minted = await app.request('/private/key/admin/indexes/rag-key-test/rag-key', { method: 'POST' })
+    expect(minted.status).toBe(201)
+    const body = await minted.json() as { rag_key: string }
+    expect(body.rag_key).toMatch(/^rag_/)
+
+    const revoked = await app.request('/private/key/admin/indexes/rag-key-test/rag-key', { method: 'DELETE' })
+    expect(revoked.status).toBe(200)
+    const row = await pool.query(`SELECT rag_key_hash FROM search_indexes WHERE name = 'rag-key-test'`)
+    expect(row.rows[0].rag_key_hash).toBeNull()
+  })
+
+  it('does not register a search-key revoke route', async () => {
+    await createIndex(pool, { name: 'search-norevoke-test' })
+    const res = await app.request('/private/key/admin/indexes/search-norevoke-test/search-key', {
+      method: 'DELETE',
+    })
+    expect(res.status).toBe(404)
+  })
 })
