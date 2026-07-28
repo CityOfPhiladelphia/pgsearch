@@ -6,6 +6,7 @@ import { analyticsAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
 import { pullEvents, decodeCursor } from '../services/analytics'
+import * as param from '../middleware/params'
 import type { AppEnv } from '../types'
 
 const MAX_PULL_LIMIT = 500
@@ -23,10 +24,7 @@ analyticsRoutes.get('/public/analytics/:name/events', withIndex(async ({ pool, i
     return apiError(c, 'VALIDATION_ERROR', 'after must be a cursor from a previous response')
   }
 
-  const limitParam = c.req.query('limit')
-  let limit = limitParam ? parseInt(limitParam, 10) : MAX_PULL_LIMIT
-  if (isNaN(limit) || limit < 1) return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
-  limit = Math.min(limit, MAX_PULL_LIMIT)
+  const limit = param.int(c, 'limit', { fallback: MAX_PULL_LIMIT, max: MAX_PULL_LIMIT })
 
   // Postgres is the parser of record for from/to and cursor contents. JS-side
   // parsing is deliberately absent — Date.parse's lenient fallback reinterprets

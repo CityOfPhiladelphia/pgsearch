@@ -10,8 +10,7 @@ import { logQuery, logEvent } from '../services/analytics'
 import { searchRoutes } from '../routes/search'
 import { adminRoutes } from '../routes/admin'
 import { analyticsRoutes } from '../routes/analytics'
-import { ValidationError } from '../middleware/validate'
-import { apiError } from '../middleware/error'
+import { onError } from '../middleware/error'
 
 describe('analytics schema', () => {
   let pool: Pool
@@ -144,13 +143,7 @@ describe('feedback postback', () => {
 
   const app = new Hono()
   app.route('/', searchRoutes)
-  app.onError((err, c) => {
-    if (err instanceof ValidationError) {
-      return apiError(c, 'VALIDATION_ERROR', err.message)
-    }
-    console.error('Unhandled error:', err)
-    return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
-  })
+  app.onError(onError)
 
   beforeAll(async () => {
     process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
@@ -300,6 +293,7 @@ describe('analytics pull', () => {
 
   const app = new Hono()
   app.route('/', analyticsRoutes)
+  app.onError(onError)
 
   const adminApp = new Hono()
   adminApp.route('/', adminRoutes)

@@ -6,6 +6,7 @@ import { ragAuth } from '../middleware/auth'
 import { withIndex } from '../middleware/deps'
 import { apiError } from '../middleware/error'
 import { parseBody, type Schema } from '../middleware/validate'
+import * as param from '../middleware/params'
 import { getAdapter } from '../services/adapter'
 import { getLlmAdapter } from '../services/llm-adapter'
 import { getPrompt } from '../services/prompts'
@@ -21,8 +22,7 @@ export const ragRoutes = new Hono<AppEnv>()
 ragRoutes.use('/public/rag/:name', ragAuth)
 
 ragRoutes.post('/public/rag/:name', withIndex(async ({ pool, index }, c) => {
-  const promptName = c.req.query('prompt')
-  if (!promptName) return apiError(c, 'VALIDATION_ERROR', 'Missing required query parameter: prompt')
+  const promptName = param.required(c, 'prompt')
 
   const { question, messages } = await parseBody<{
     question: string

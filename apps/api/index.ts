@@ -13,8 +13,7 @@ import { analyticsRoutes } from './routes/analytics'
 import { healthRoutes } from './routes/health'
 import { getPool, registerVectorType } from './db/pool'
 import { runMigrations } from './db/migrate'
-import { apiError } from './middleware/error'
-import { ValidationError } from './middleware/validate'
+import { onError } from './middleware/error'
 
 export const app = new Hono()
 
@@ -39,12 +38,6 @@ app.route('/', promptsRoutes)
 app.route('/', ragRoutes)
 app.route('/', analyticsRoutes)
 
-app.onError((err, c) => {
-  if (err instanceof ValidationError) {
-    return apiError(c, 'VALIDATION_ERROR', err.message)
-  }
-  console.error('Unhandled error:', err)
-  return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
-})
+app.onError(onError)
 
 export const handler = handle(app)
