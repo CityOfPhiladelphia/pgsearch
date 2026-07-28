@@ -51,7 +51,7 @@ export interface AnalyticsEvent {
 export interface PullOptions {
   from?: string
   to?: string
-  after?: { createdAt: string; eventId: string } | null
+  after?: { createdAt: string; eventId: string }
   limit: number
 }
 
@@ -91,7 +91,6 @@ export function decodeCursor(cursor: string): { createdAt: string; eventId: stri
 }
 
 export async function pullEvents(pool: Pool, indexId: number, options: PullOptions): Promise<PullResult> {
-  const after = options.after ?? null
   // Fetch one extra row to know whether a next page exists.
   // Unnamed statement on purpose: a prepared/named statement gets a generic plan
   // where the $n IS NULL guards can't const-fold, dropping the keyset out of the Index Cond.
@@ -108,8 +107,8 @@ export async function pullEvents(pool: Pool, indexId: number, options: PullOptio
       indexId,
       options.from ?? null,
       options.to ?? null,
-      after?.createdAt ?? null,
-      after?.eventId ?? null,
+      options.after?.createdAt ?? null,
+      options.after?.eventId ?? null,
       options.limit + 1,
     ],
   )
