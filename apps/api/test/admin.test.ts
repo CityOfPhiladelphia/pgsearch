@@ -91,6 +91,26 @@ describe('admin routes', () => {
     expect(row.rows[0].rag_key_hash).toBeNull()
   })
 
+  it('mints (rotates) an index key for an existing index', async () => {
+    await createIndex(pool, { name: 'index-key-test' })
+
+    const res = await app.request('/private/key/admin/indexes/index-key-test/index-key', {
+      method: 'POST',
+    })
+
+    expect(res.status).toBe(201)
+    const body = await res.json() as { index_key: string }
+    expect(body.index_key).toMatch(/^idx_/)
+  })
+
+  it('does not register an index-key revoke route', async () => {
+    await createIndex(pool, { name: 'index-norevoke-test' })
+    const res = await app.request('/private/key/admin/indexes/index-norevoke-test/index-key', {
+      method: 'DELETE',
+    })
+    expect(res.status).toBe(404)
+  })
+
   it('does not register a search-key revoke route', async () => {
     await createIndex(pool, { name: 'search-norevoke-test' })
     const res = await app.request('/private/key/admin/indexes/search-norevoke-test/search-key', {

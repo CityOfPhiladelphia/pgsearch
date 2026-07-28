@@ -59,12 +59,12 @@ adminRoutes.get('/private/key/admin/db-status', withPool(async ({ pool }, c) => 
 }))
 
 // Per-key-type mint/revoke routes at /indexes/:name/<type>-key, responding with
-// { <type>_key }. Minting rotates: search keys are otherwise only issued at
-// index creation, leaving no way to recover or roll one that was lost or
-// leaked. Search keys are not revocable — every index must keep a working one
-// (the column is NOT NULL); rag and analytics are optional capabilities where
-// a null hash means disabled, so they revoke too.
-const MINTABLE_KEYS: KeyType[] = ['search', 'rag', 'analytics']
+// { <type>_key }. Minting rotates: index and search keys are otherwise only
+// issued at index creation, leaving no way to recover or roll one that was
+// lost or leaked. Index and search keys are not revocable — every index must
+// keep working ones (their columns are NOT NULL); rag and analytics are
+// optional capabilities where a null hash means disabled, so they revoke too.
+const MINTABLE_KEYS: KeyType[] = ['index', 'search', 'rag', 'analytics']
 const REVOCABLE_KEYS: KeyType[] = ['rag', 'analytics']
 
 for (const type of MINTABLE_KEYS) {
