@@ -1,11 +1,11 @@
 // ABOUTME: Document ingest pipeline for pgsearch.
 // ABOUTME: Handles chunking, content hashing, diff-based embedding, tsvector generation, and upsert.
 
-import assert from 'assert'
 import crypto from 'crypto'
 import type { Pool } from 'pg'
 import type { EmbeddingAdapter } from '@phila/search-embeddings'
 import type { IngestRequest, IngestResponse, IndexConfig } from '../types'
+import { ValidationError } from '../middleware/validate'
 import { chunkText } from './chunk'
 
 interface IngestConfigOverrides {
@@ -42,11 +42,11 @@ export async function ingestDocument(
   // Chunk the body text
   const segments = chunkText(request.body, maxSegmentTokens)
 
-  // Guardrail: reject if too many segments
-  assert(
-    segments.length <= maxSegmentsPerDoc,
-    `Document produces ${segments.length} segments, exceeding limit of ${maxSegmentsPerDoc}`
-  )
+  // Guardrail: reject if too many segments. ValidationError surfaces to the
+  // caller as a 400 via the global error handler.
+  if (segments.length > maxSegmentsPerDoc) {
+    throw new ValidationError(`Document produces ${segments.length} segments, exceeding limit of ${maxSegmentsPerDoc}`)
+  }
 
   // Diff against existing document
   const existingDoc = await pool.query(

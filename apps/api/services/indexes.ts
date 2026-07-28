@@ -142,17 +142,15 @@ export async function mintKey(
   indexName: string,
   keyType: KeyType,
 ): Promise<MintKeyResult | null> {
-  const existing = await getIndex(pool, indexName)
-  if (!existing) return null
-
   const key = generateKey(KEY_PREFIXES[keyType])
   const hash = await hashKey(key)
   const column = KEY_HASH_COLUMNS[keyType]
 
-  await pool.query(
-    `UPDATE search_indexes SET ${column} = $1, updated_at = NOW() WHERE name = $2`,
+  const result = await pool.query(
+    `UPDATE search_indexes SET ${column} = $1, updated_at = NOW() WHERE name = $2 RETURNING index_id`,
     [hash, indexName],
   )
+  if (result.rows.length === 0) return null
   return { key }
 }
 
@@ -163,13 +161,10 @@ export async function revokeKey(
   indexName: string,
   keyType: KeyType,
 ): Promise<boolean> {
-  const existing = await getIndex(pool, indexName)
-  if (!existing) return false
-
   const column = KEY_HASH_COLUMNS[keyType]
-  await pool.query(
+  const result = await pool.query(
     `UPDATE search_indexes SET ${column} = NULL, updated_at = NOW() WHERE name = $1`,
     [indexName],
   )
-  return true
+  return (result.rowCount ?? 0) > 0
 }
