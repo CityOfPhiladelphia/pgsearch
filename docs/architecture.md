@@ -5,7 +5,7 @@
 
 ## System Overview
 
-pgsearch runs as a single AWS Lambda function behind API Gateway. The Lambda handles all routes — admin, ingest, search, prompts, rag, and health. PostgreSQL with the pgvector extension provides both relational storage and vector similarity search. AWS Bedrock provides both embedding (Titan) and LLM synthesis (Claude) capabilities.
+pgsearch runs as a single AWS Lambda function behind API Gateway. The Lambda handles all routes — admin, ingest, search, prompts, rag, analytics, and health. PostgreSQL with the pgvector extension provides both relational storage and vector similarity search. AWS Bedrock provides both embedding (Titan) and LLM synthesis (Claude) capabilities.
 
 Infrastructure is defined in `cdk/app.ts` using AWS CDK with [phila constructs](https://github.com/CityOfPhiladelphia/phila-ctl). The stack includes API Gateway (with WAF), Lambda, RDS PostgreSQL, Secrets Manager, and supporting IAM/KMS resources.
 
@@ -24,7 +24,7 @@ See the [phila-ctl documentation](https://github.com/CityOfPhiladelphia/phila-ct
 
 ## Database Schema
 
-Five tables:
+Six tables:
 
 ```
 search_indexes
@@ -33,6 +33,7 @@ search_indexes
   ├── config (JSONB) — all per-index settings
   ├── index_key_hash, search_key_hash — bcrypt
   ├── rag_key_hash (nullable) — bcrypt; null = RAG disabled for this index
+  ├── analytics_key_hash (nullable) — bcrypt; null = analytics pull disabled for this index
   ├── total_documents — document count
   └── created_at, updated_at
 
@@ -57,6 +58,14 @@ rag_prompts
   ├── content (JSONB) — system, response_format, model, max_tokens, temperature, retrieval
   └── created_at, updated_at
 
+events
+  ├── event_id (UUID PK)
+  ├── index_id (FK)
+  ├── group_id (FK to events.event_id) — anchor rows self-reference (group_id = event_id); feedback rows point at their anchor
+  ├── action — 'search' for anchor rows, free-form for feedback rows
+  ├── data (JSONB) — the captured query or feedback payload
+  └── created_at
+
 ```
 
 `index_id` is denormalized onto `search_segments` to avoid joining through `search_documents` on every search query.
@@ -77,20 +86,21 @@ Each index is fully isolated: its own authentication keys, configuration, and HN
 
 ## Authentication Model
 
-Four credentials, three levels:
+Five credentials, three levels:
 
 | Level | Header | Source | Scope |
 |-------|--------|--------|-------|
-| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete, mint/revoke RAG keys, rotate search keys) |
-| Per-index — write | `x-index-key` | Returned by `createIndex` | Ingest documents into a specific index; manage that index's prompts |
-| Per-index — search | `x-search-key` | Returned by `createIndex` | Query a specific index |
-| Per-index — RAG | `x-rag-key` | Returned by admin `mintRagKey` (lazy) | Invoke RAG synthesis against a specific index |
+| Admin (API Gateway) | `x-api-key` | AWS Secrets Manager / SSM | Manage all indexes (create, update, delete; mint/rotate index, search, RAG, and analytics keys; revoke RAG and analytics keys) |
+| Per-index — write | `x-index-key` | Returned by `createIndex`, rotatable via admin | Ingest documents into a specific index; manage that index's prompts |
+| Per-index — search | `x-search-key` | Returned by `createIndex`, rotatable via admin | Query a specific index |
+| Per-index — RAG | `x-rag-key` | Minted by admin (lazy) | Invoke RAG synthesis against a specific index |
+| Per-index — analytics | `x-analytics-key` | Minted by admin (lazy), prefixed `anly_` | Pull raw search events for a specific index |
 
-The admin key is managed by API Gateway infrastructure — retrieved from AWS Secrets Manager. Index, search, and RAG keys are application-level credentials, bcrypt-hashed, stored per-index. The RAG key is **lazy** — indexes that don't use RAG never carry an unused credential. When `rag_key_hash` is null (RAG not enabled) or the provided key doesn't match, the RAG endpoint returns 401 with `Invalid RAG key`. Callers needing to distinguish "feature disabled" from "wrong key" can check the index record directly via the admin endpoint.
+The admin key is managed by API Gateway infrastructure — retrieved from AWS Secrets Manager. Index, search, RAG, and analytics keys are application-level credentials, bcrypt-hashed, stored per-index. The admin mint/revoke routes for these four types loop over the same `KeyType` list rather than hand-rolling one route per type. Index and search keys are minted at index creation and can only be rotated afterward — every index must keep working ones (their hash columns are `NOT NULL`), so there's no revoke route for them. RAG and analytics keys are **lazy** — indexes that don't use RAG or analytics never carry an unused credential — and can be both minted and revoked. When a per-index key's hash column is null (feature not enabled) or the provided key doesn't match, the corresponding endpoint returns 401 with an `Invalid <type> key` message. Callers needing to distinguish "feature disabled" from "wrong key" can check the index record directly via the admin endpoint.
 
 Splitting the RAG key from the search key matters because LLM calls can cost 100–1000× more than an embedding call. Separate keys keep cost attribution clean and let you revoke LLM-spend access without disrupting read access.
 
-This separation also means you can hand out a `search_key` to a frontend consumer without exposing write or admin access — and grant `rag_key` independently when LLM synthesis is the intended use case.
+This separation also means you can hand out a `search_key` to a frontend consumer without exposing write or admin access — and grant `rag_key` or `analytics_key` independently when LLM synthesis or event export is the intended use case.
 
 ---
 
@@ -210,10 +220,10 @@ pgsearch/
 ├── apps/
 │   ├── api/                   # Lambda search service
 │   │   ├── index.ts           # Hono app + Lambda handler
-│   │   ├── routes/            # admin, ingest, search, prompts, rag, health
+│   │   ├── routes/            # admin, ingest, search, prompts, rag, analytics, health
 │   │   ├── services/          # search, ingest, score, chunk,
-│   │   │                      # indexes, prompts, rag, adapter, llm-adapter
-│   │   ├── middleware/        # auth (index/search/rag), error handling
+│   │   │                      # indexes, prompts, rag, analytics, adapter, llm-adapter
+│   │   ├── middleware/        # auth (index/search/rag/analytics), params, validate, error handling
 │   │   ├── db/                # pool, migrate, migrations
 │   │   ├── dev/               # Static dev tools (search.html, rag.html)
 │   │   ├── config.ts          # Default index configuration

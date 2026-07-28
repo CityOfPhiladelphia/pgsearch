@@ -1,10 +1,11 @@
 // ABOUTME: Per-index authentication middleware for pgsearch API.
-// ABOUTME: Verifies index, search, and RAG keys against bcrypt hashes stored per index.
+// ABOUTME: Verifies per-index keys (index, search, RAG, analytics) against bcrypt hashes stored per index.
 
 import { createMiddleware } from 'hono/factory'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import type { AppEnv, SearchIndex } from '../types'
+import type { KeyHashColumn } from '../services/indexes'
 import { apiError } from './error'
 
 const BCRYPT_ROUNDS = 10
@@ -21,11 +22,9 @@ export async function verifyKey(key: string, hash: string): Promise<boolean> {
   return bcrypt.compare(key, hash)
 }
 
-type KeyHashField = 'index_key_hash' | 'search_key_hash' | 'rag_key_hash'
-
 interface KeyAuthConfig {
   header: string
-  hashField: KeyHashField
+  hashField: KeyHashColumn
   keyLabel: string
 }
 
@@ -58,3 +57,4 @@ function keyAuth(config: KeyAuthConfig) {
 export const indexAuth = keyAuth({ header: 'x-index-key', hashField: 'index_key_hash', keyLabel: 'index' })
 export const searchAuth = keyAuth({ header: 'x-search-key', hashField: 'search_key_hash', keyLabel: 'search' })
 export const ragAuth = keyAuth({ header: 'x-rag-key', hashField: 'rag_key_hash', keyLabel: 'RAG' })
+export const analyticsAuth = keyAuth({ header: 'x-analytics-key', hashField: 'analytics_key_hash', keyLabel: 'analytics' })

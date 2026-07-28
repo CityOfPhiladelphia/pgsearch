@@ -1,5 +1,5 @@
 // ABOUTME: Tests for search route query-param validation behind real key auth.
-// ABOUTME: Exercises kind_weights parsing; the 200 path is covered at the service seam (adapter needs bedrock).
+// ABOUTME: Exercises kind_weights and recency parsing; the 200 path is covered in analytics.test.ts (mode=lexical).
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Hono } from 'hono'
@@ -7,6 +7,7 @@ import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex } from '../services/indexes'
 import { searchRoutes } from '../routes/search'
+import { onError } from '../middleware/error'
 
 describe('GET /public/search/:name kind_weights validation', () => {
   let pool: Pool
@@ -30,6 +31,7 @@ describe('GET /public/search/:name kind_weights validation', () => {
 
   const app = new Hono()
   app.route('/', searchRoutes)
+  app.onError(onError)
 
   const get = (query: string) =>
     app.request(`/public/search/search-route-idx?${query}`, { headers: { 'x-search-key': searchKey } })

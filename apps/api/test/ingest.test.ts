@@ -2,9 +2,12 @@
 // ABOUTME: Tests chunking, hash-based diffing, embedding generation, tsvector creation, and upsert logic.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
-import { getTestPool, setupSchema, teardownSchema, closePool } from './setup'
+import { Hono } from 'hono'
+import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex } from '../services/indexes'
 import { ingestDocument, deleteDocument } from '../services/ingest'
+import { ingestRoutes } from '../routes/ingest'
+import { onError } from '../middleware/error'
 import { createTestAdapter } from '@phila/search-embeddings'
 import { mergeConfig } from '../config'
 import type { Pool } from 'pg'
@@ -207,5 +210,44 @@ describe('ingest service', () => {
 
     const doc = await pool.query("SELECT * FROM search_documents WHERE external_id = 'to-delete' AND index_id = $1", [indexId])
     expect(doc.rows).toHaveLength(0)
+  })
+})
+
+describe('ingest route segment cap', () => {
+  let indexKey: string
+
+  const app = new Hono()
+  app.route('/', ingestRoutes)
+  app.onError(onError)
+
+  beforeAll(async () => {
+    process.env.DB_HOST = process.env.TEST_DB_HOST || 'localhost'
+    process.env.DB_PORT = process.env.TEST_DB_PORT || '5433'
+    process.env.DB_NAME = process.env.TEST_DB_NAME || 'pgsearch_test'
+    process.env.DB_USER = process.env.TEST_DB_USER || 'pgsearch'
+    process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || 'testpassword'
+
+    await setupSchema()
+    const pool = await getTestPool()
+    const created = await createIndex(pool, {
+      name: 'ingest-route-cap',
+      config: { max_segments_per_document: 5, max_segment_tokens: 10 } as any,
+    })
+    indexKey = created!.index_key
+  })
+  afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
+
+  // The cap rejects before any embedding call, so this runs without Bedrock.
+  it('400s a document exceeding the segment cap', async () => {
+    const longBody = Array(200).fill('A paragraph with several words. Another sentence here.').join('\n\n')
+    const res = await app.request('/public/index/ingest-route-cap/documents', {
+      method: 'POST',
+      headers: { 'x-index-key': indexKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ external_id: 'too-long', title: 'Too Long', body: longBody }),
+    })
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('exceeding limit')
   })
 })

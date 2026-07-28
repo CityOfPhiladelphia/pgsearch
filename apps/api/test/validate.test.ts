@@ -1,5 +1,5 @@
 // ABOUTME: Tests for the schema-based validator in middleware/validate.ts.
-// ABOUTME: Covers typeof / oneOf / min / nonEmpty / array / schema / optional + assertValid.
+// ABOUTME: Covers typeof / oneOf / min / maxLength / nonEmpty / array / schema / optional + assertValid.
 
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
@@ -93,6 +93,21 @@ describe('validate', () => {
     const r = validate({ obj: {} }, schema)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.message).toMatch(/obj\.x is required/)
+  })
+
+  it('maxLength accepts a string at the limit', () => {
+    const result = validate({ action: 'a'.repeat(64) }, { action: ['maxLength', 64] })
+    expect(result.ok).toBe(true)
+  })
+
+  it('maxLength rejects a string over the limit', () => {
+    const result = validate({ action: 'a'.repeat(65) }, { action: ['maxLength', 64] })
+    expect(result).toEqual({ ok: false, message: 'action must be at most 64 characters' })
+  })
+
+  it('maxLength rejects a non-string value', () => {
+    const result = validate({ action: 42 }, { action: ['maxLength', 64] })
+    expect(result).toEqual({ ok: false, message: 'action must be at most 64 characters' })
   })
 })
 

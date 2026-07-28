@@ -2,7 +2,7 @@
 // ABOUTME: Handles CRUD operations on search indexes behind API Gateway key authentication.
 
 import { Hono } from 'hono'
-import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey } from '../services/indexes'
+import { createIndex, getIndex, listIndexes, updateIndex, deleteIndex, mintKey, revokeKey, type KeyType } from '../services/indexes'
 import { dbStatus } from '../services/dbstatus'
 import { apiError } from '../middleware/error'
 import { withPool } from '../middleware/deps'
@@ -58,25 +58,29 @@ adminRoutes.get('/private/key/admin/db-status', withPool(async ({ pool }, c) => 
   return c.json(await dbStatus(pool))
 }))
 
-adminRoutes.post('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {
-  const name = c.req.param('name')!
-  const result = await mintKey(pool, name, 'rag')
-  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-  return c.json({ rag_key: result.key }, 201)
-}))
+// Per-key-type mint/revoke routes at /indexes/:name/<type>-key, responding with
+// { <type>_key }. Minting rotates: index and search keys are otherwise only
+// issued at index creation, leaving no way to recover or roll one that was
+// lost or leaked. Index and search keys are not revocable — every index must
+// keep working ones (their columns are NOT NULL); rag and analytics are
+// optional capabilities where a null hash means disabled, so they revoke too.
+const MINTABLE_KEYS: KeyType[] = ['index', 'search', 'rag', 'analytics']
+const REVOCABLE_KEYS: KeyType[] = ['rag', 'analytics']
 
-// Mints (rotates) the search key — search keys are otherwise only issued at index
-// creation, leaving no way to recover or roll one that was lost or leaked.
-adminRoutes.post('/private/key/admin/indexes/:name/search-key', withPool(async ({ pool }, c) => {
-  const name = c.req.param('name')!
-  const result = await mintKey(pool, name, 'search')
-  if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-  return c.json({ search_key: result.key }, 201)
-}))
+for (const type of MINTABLE_KEYS) {
+  adminRoutes.post(`/private/key/admin/indexes/:name/${type}-key`, withPool(async ({ pool }, c) => {
+    const name = c.req.param('name')!
+    const result = await mintKey(pool, name, type)
+    if (!result) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+    return c.json({ [`${type}_key`]: result.key }, 201)
+  }))
+}
 
-adminRoutes.delete('/private/key/admin/indexes/:name/rag-key', withPool(async ({ pool }, c) => {
-  const name = c.req.param('name')!
-  const revoked = await revokeKey(pool, name, 'rag')
-  if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
-  return c.json({ revoked: true })
-}))
+for (const type of REVOCABLE_KEYS) {
+  adminRoutes.delete(`/private/key/admin/indexes/:name/${type}-key`, withPool(async ({ pool }, c) => {
+    const name = c.req.param('name')!
+    const revoked = await revokeKey(pool, name, type)
+    if (!revoked) return apiError(c, 'NOT_FOUND', `Index '${name}' not found`)
+    return c.json({ revoked: true })
+  }))
+}

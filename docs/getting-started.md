@@ -89,6 +89,7 @@ Response:
 
 ```json
 {
+  "group_id": "b3f1...",
   "results": [
     {
       "external_id": "page-001",
@@ -106,5 +107,6 @@ Response:
 - `score` is a rank-based combination of keyword relevance and semantic similarity (vector) using Reciprocal Rank Fusion.
 - `snippet` is the best-matching segment from the document.
 - `total` is the count of unique matching documents before the `limit` is applied — not the length of `results`.
+- `group_id` identifies this query for feedback postbacks and analytics; it's omitted if event capture failed (capture never blocks the search response). See [docs/analytics.md](analytics.md).
 
 See [docs/search.md](search.md) for how scoring works and how to tune it.
