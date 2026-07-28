@@ -13,7 +13,7 @@ PostgreSQL hybrid search + RAG service combining weighted full-text keyword scor
 - **Segment** — a chunk of document body sized to a token budget (default ~1000, estimated from UTF-8 byte length). Each segment gets its own vector embedding and tsvector. Search returns the best-matching segment as the result snippet.
 - **Hybrid search** — each query runs two passes: keyword matching (SQL-ranked `ts_rank_cd` over tsvectors) and semantic similarity (pgvector cosine distance). Results are combined using Reciprocal Rank Fusion (RRF) for robust ranking.
 - **RAG** — `/public/rag/:name?prompt=<name>` retrieves the top chunks for a question and asks an LLM to synthesize an answer with inline citations. Prompts are per-index DB entities; RAG access is gated by a separate `x-rag-key`.
-- **Event** — searches are logged automatically and the response carries a `query_id`; consumers post feedback actions (clicks, dismissals) against it. Index owners pull the raw event log with a separate `x-analytics-key`.
+- **Event** — searches are logged automatically and the response carries a `group_id`; consumers post feedback actions (clicks, dismissals) against it, and all events from one interaction share the group. Index owners pull the raw event log with a separate `x-analytics-key`.
 
 ## Quick start
 

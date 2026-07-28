@@ -1,48 +1,52 @@
 // ABOUTME: Analytics event log: query capture, feedback postbacks, and paginated pulls.
-// ABOUTME: One generic search_events bucket; query rows are action='search' with null query_id.
+// ABOUTME: One generic events bucket; anchor rows are action='search' with group_id = event_id.
 
 import type { Pool } from 'pg'
 
-// Returns the new query row's event_id — the query_id consumers post feedback against.
+// Inserts the group's anchor event and returns its id — the group_id consumers
+// post feedback against. The subselect evaluates gen_random_uuid() once so the
+// anchor self-points (group_id = event_id) in a single statement.
 export async function logQuery(
   pool: Pool,
   indexId: number,
   data: Record<string, unknown>,
 ): Promise<string> {
   const result = await pool.query(
-    `INSERT INTO search_events (index_id, action, data)
-     VALUES ($1, 'search', $2)
+    `INSERT INTO events (event_id, group_id, index_id, action, data)
+     SELECT id, id, $1, 'search', $2
+     FROM (SELECT gen_random_uuid() AS id) g
      RETURNING event_id`,
     [indexId, JSON.stringify(data)],
   )
   return result.rows[0].event_id
 }
 
-// Inserts a feedback event by copying index_id from the parent query row.
-// The WHERE clause is the whole contract: parent must exist, belong to the
-// authenticated index, and itself be a query row (query_id IS NULL) — feedback
-// cannot chain to feedback. Returns null when no parent matched.
+// Inserts a feedback event into the anchor's group by copying its group_id and
+// index_id. The WHERE clause is the whole contract: the anchor must exist,
+// belong to the authenticated index, and itself be an anchor (group_id =
+// event_id) — feedback cannot chain to feedback. Returns null when no anchor
+// matched.
 export async function logEvent(
   pool: Pool,
   indexId: number,
-  queryId: string,
+  groupId: string,
   action: string,
   data: Record<string, unknown>,
 ): Promise<string | null> {
   const result = await pool.query(
-    `INSERT INTO search_events (index_id, query_id, action, data)
-     SELECT index_id, event_id, $3, $4
-     FROM search_events
-     WHERE event_id = $1 AND index_id = $2 AND query_id IS NULL
+    `INSERT INTO events (index_id, group_id, action, data)
+     SELECT index_id, group_id, $3, $4
+     FROM events
+     WHERE event_id = $1 AND index_id = $2 AND group_id = event_id
      RETURNING event_id`,
-    [queryId, indexId, action, JSON.stringify(data)],
+    [groupId, indexId, action, JSON.stringify(data)],
   )
   return result.rows[0]?.event_id ?? null
 }
 
 export interface AnalyticsEvent {
   event_id: string
-  query_id: string | null
+  group_id: string
   action: string
   data: Record<string, unknown>
   created_at: string
@@ -95,8 +99,8 @@ export async function pullEvents(pool: Pool, indexId: number, options: PullOptio
   // Unnamed statement on purpose: a prepared/named statement gets a generic plan
   // where the $n IS NULL guards can't const-fold, dropping the keyset out of the Index Cond.
   const result = await pool.query(
-    `SELECT event_id, query_id, action, data, created_at, created_at::text AS created_at_text
-     FROM search_events
+    `SELECT event_id, group_id, action, data, created_at, created_at::text AS created_at_text
+     FROM events
      WHERE index_id = $1
        AND ($2::timestamptz IS NULL OR created_at >= $2)
        AND ($3::timestamptz IS NULL OR created_at < $3)
@@ -122,7 +126,7 @@ export async function pullEvents(pool: Pool, indexId: number, options: PullOptio
   return {
     events: page.map(row => ({
       event_id: row.event_id,
-      query_id: row.query_id,
+      group_id: row.group_id,
       action: row.action,
       data: row.data,
       created_at: row.created_at.toISOString(),

@@ -18,7 +18,7 @@ searchRoutes.use('/public/search/:name/events', searchAuth)
 const MAX_EVENT_DATA_BYTES = 4096
 
 interface FeedbackBody {
-  query_id: string
+  group_id: string
   action: string
   data?: Record<string, unknown>
 }
@@ -80,9 +80,9 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
   const adapter = getAdapter(index.config)
   const results = await hybridSearch(pool, index, adapter, query, { limit, mode: modeParam, kindWeights, recency, kinds })
 
-  // Capture failures degrade to a response without query_id — analytics never breaks search.
+  // Capture failures degrade to a response without group_id — analytics never breaks search.
   // Awaited, not fire-and-forget: Lambda freezes the container after the response, dropping in-flight writes.
-  const queryId = await logQuery(pool, index.index_id, {
+  const groupId = await logQuery(pool, index.index_id, {
     q: query,
     mode: modeParam ?? 'hybrid',
     kinds: kinds ?? null,
@@ -94,23 +94,23 @@ searchRoutes.get('/public/search/:name', withIndex(async ({ pool, index }, c) =>
     return undefined
   })
 
-  return c.json(queryId ? { query_id: queryId, ...results } : results, 200)
+  return c.json(groupId ? { group_id: groupId, ...results } : results, 200)
 }))
 
 searchRoutes.post('/public/search/:name/events', withIndex(async ({ pool, index }, c) => {
   const body = await parseBody<FeedbackBody>(c, {
-    query_id: [['typeof', 'string'], ['nonEmpty']],
+    group_id: [['typeof', 'string'], ['nonEmpty']],
     action: [['typeof', 'string'], ['nonEmpty'], ['maxLength', 64]],
     'data?': ['object'],
   })
   // Malformed UUIDs would otherwise surface as a Postgres cast error (500), not a 400.
-  if (!UUID_PATTERN.test(body.query_id)) throw new ValidationError('query_id must be a UUID')
+  if (!UUID_PATTERN.test(body.group_id)) throw new ValidationError('group_id must be a UUID')
   const data = body.data ?? {}
   if (Buffer.byteLength(JSON.stringify(data)) > MAX_EVENT_DATA_BYTES) {
     throw new ValidationError(`data must serialize to at most ${MAX_EVENT_DATA_BYTES} bytes`)
   }
 
-  const eventId = await logEvent(pool, index.index_id, body.query_id, body.action, data)
-  if (!eventId) return apiError(c, 'NOT_FOUND', 'Unknown query_id')
+  const eventId = await logEvent(pool, index.index_id, body.group_id, body.action, data)
+  if (!eventId) return apiError(c, 'NOT_FOUND', 'Unknown group_id')
   return c.json({ event_id: eventId }, 201)
 }))

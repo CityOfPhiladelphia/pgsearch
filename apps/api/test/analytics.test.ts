@@ -22,10 +22,10 @@ describe('analytics schema', () => {
   })
   afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
 
-  it('creates search_events with the expected columns', async () => {
+  it('creates events with the expected columns', async () => {
     const result = await pool.query(
       `SELECT column_name, is_nullable FROM information_schema.columns
-       WHERE table_name = 'search_events' ORDER BY column_name`,
+       WHERE table_name = 'events' ORDER BY column_name`,
     )
     const columns = Object.fromEntries(result.rows.map(r => [r.column_name, r.is_nullable]))
     expect(columns).toEqual({
@@ -33,8 +33,8 @@ describe('analytics schema', () => {
       created_at: 'NO',
       data: 'NO',
       event_id: 'NO',
+      group_id: 'NO',
       index_id: 'NO',
-      query_id: 'YES',
     })
   })
 
@@ -64,10 +64,10 @@ describe('logQuery', () => {
     const data = { q: 'parking permit', mode: 'lexical', kinds: null, limit: 10, total: 2, result_ids: ['a', 'b'] }
     const eventId = await logQuery(pool, indexId, data)
 
-    const row = await pool.query('SELECT * FROM search_events WHERE event_id = $1', [eventId])
+    const row = await pool.query('SELECT * FROM events WHERE event_id = $1', [eventId])
     expect(row.rows).toHaveLength(1)
     expect(row.rows[0].index_id).toBe(indexId)
-    expect(row.rows[0].query_id).toBeNull()
+    expect(row.rows[0].group_id).toBe(eventId)
     expect(row.rows[0].action).toBe('search')
     expect(row.rows[0].data).toEqual(data)
   })
@@ -97,13 +97,13 @@ describe('search capture', () => {
   const search = (query: string) =>
     app.request(`/public/search/analytics-capture-idx?${query}`, { headers: { 'x-search-key': searchKey } })
 
-  it('logs the query and returns a query_id', async () => {
+  it('logs the query and returns a group_id', async () => {
     const res = await search('q=water&mode=lexical&limit=5')
     expect(res.status).toBe(200)
-    const body = await res.json() as { query_id?: string; total: number }
-    expect(body.query_id).toMatch(/^[0-9a-f-]{36}$/)
+    const body = await res.json() as { group_id?: string; total: number }
+    expect(body.group_id).toMatch(/^[0-9a-f-]{36}$/)
 
-    const row = await pool.query('SELECT * FROM search_events WHERE event_id = $1', [body.query_id])
+    const row = await pool.query('SELECT * FROM events WHERE event_id = $1', [body.group_id])
     expect(row.rows).toHaveLength(1)
     expect(row.rows[0].action).toBe('search')
     expect(row.rows[0].data).toEqual({
@@ -111,19 +111,19 @@ describe('search capture', () => {
     })
   })
 
-  // Must stay the LAST test in this block: it drops search_events and the only
+  // Must stay the LAST test in this block: it drops events and the only
   // way to get it back is a full teardown + setup — schema_migrations still
   // records version 10 after the DROP, so a bare setupSchema() would skip
   // recreating the table (runMigrations skips recorded versions). The rebuild
   // also wipes this block's index, which no later test in this block may rely on.
-  it('returns results without query_id when the log insert fails', async () => {
+  it('returns results without group_id when the log insert fails', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
-    await pool.query('DROP TABLE search_events CASCADE')
+    await pool.query('DROP TABLE events CASCADE')
     try {
       const res = await search('q=water&mode=lexical')
       expect(res.status).toBe(200)
-      const body = await res.json() as { query_id?: string; total: number; results: unknown[] }
-      expect(body.query_id).toBeUndefined()
+      const body = await res.json() as { group_id?: string; total: number; results: unknown[] }
+      expect(body.group_id).toBeUndefined()
       expect(body.total).toBe(0)
       expect(body.results).toEqual([])
       expect(errors).toHaveBeenCalledOnce()
@@ -140,7 +140,7 @@ describe('feedback postback', () => {
   let pool: Pool
   let searchKey: string
   let otherSearchKey: string
-  let queryId: string
+  let groupId: string
 
   const app = new Hono()
   app.route('/', searchRoutes)
@@ -169,7 +169,7 @@ describe('feedback postback', () => {
     const res = await app.request('/public/search/analytics-fb-idx?q=water&mode=lexical', {
       headers: { 'x-search-key': searchKey },
     })
-    queryId = ((await res.json()) as { query_id: string }).query_id
+    groupId = ((await res.json()) as { group_id: string }).group_id
   })
   afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
 
@@ -181,61 +181,61 @@ describe('feedback postback', () => {
     })
 
   it('records a feedback event against a query row', async () => {
-    const res = await post({ query_id: queryId, action: 'selected', data: { external_id: 'page-1', rank: 3 } })
+    const res = await post({ group_id: groupId, action: 'selected', data: { external_id: 'page-1', rank: 3 } })
     expect(res.status).toBe(201)
     const body = await res.json() as { event_id: string }
 
-    const row = await pool.query('SELECT * FROM search_events WHERE event_id = $1', [body.event_id])
-    expect(row.rows[0].query_id).toBe(queryId)
+    const row = await pool.query('SELECT * FROM events WHERE event_id = $1', [body.event_id])
+    expect(row.rows[0].group_id).toBe(groupId)
     expect(row.rows[0].action).toBe('selected')
     expect(row.rows[0].data).toEqual({ external_id: 'page-1', rank: 3 })
-    // index_id copied from the parent query row
-    const parent = await pool.query('SELECT index_id FROM search_events WHERE event_id = $1', [queryId])
+    // index_id copied from the anchor event
+    const parent = await pool.query('SELECT index_id FROM events WHERE event_id = $1', [groupId])
     expect(row.rows[0].index_id).toBe(parent.rows[0].index_id)
   })
 
-  it('404s an unknown query_id', async () => {
-    const res = await post({ query_id: '00000000-0000-0000-0000-000000000000', action: 'selected' })
+  it('404s an unknown group_id', async () => {
+    const res = await post({ group_id: '00000000-0000-0000-0000-000000000000', action: 'selected' })
     expect(res.status).toBe(404)
   })
 
-  it('404s a query_id belonging to another index', async () => {
-    const res = await post({ query_id: queryId, action: 'selected' }, otherSearchKey, 'analytics-fb-other')
+  it('404s a group_id belonging to another index', async () => {
+    const res = await post({ group_id: groupId, action: 'selected' }, otherSearchKey, 'analytics-fb-other')
     expect(res.status).toBe(404)
   })
 
-  it('404s a query_id that points at a feedback row, not a query row', async () => {
-    const first = await post({ query_id: queryId, action: 'selected' })
+  it('404s a group_id that points at a feedback row, not an anchor', async () => {
+    const first = await post({ group_id: groupId, action: 'selected' })
     expect(first.status).toBe(201)
     const { event_id } = await first.json() as { event_id: string }
-    const stored = await pool.query('SELECT data FROM search_events WHERE event_id = $1', [event_id])
+    const stored = await pool.query('SELECT data FROM events WHERE event_id = $1', [event_id])
     expect(stored.rows[0].data).toEqual({})
-    const res = await post({ query_id: event_id, action: 'selected' })
+    const res = await post({ group_id: event_id, action: 'selected' })
     expect(res.status).toBe(404)
   })
 
   it('400s a missing action', async () => {
-    const res = await post({ query_id: queryId })
+    const res = await post({ group_id: groupId })
     expect(res.status).toBe(400)
   })
 
   it('400s an action over 64 characters', async () => {
-    const res = await post({ query_id: queryId, action: 'a'.repeat(65) })
+    const res = await post({ group_id: groupId, action: 'a'.repeat(65) })
     expect(res.status).toBe(400)
   })
 
-  it('400s a non-uuid query_id', async () => {
-    const res = await post({ query_id: 'not-a-uuid', action: 'selected' })
+  it('400s a non-uuid group_id', async () => {
+    const res = await post({ group_id: 'not-a-uuid', action: 'selected' })
     expect(res.status).toBe(400)
   })
 
   it('400s data over 4KB serialized', async () => {
-    const res = await post({ query_id: queryId, action: 'selected', data: { blob: 'x'.repeat(5000) } })
+    const res = await post({ group_id: groupId, action: 'selected', data: { blob: 'x'.repeat(5000) } })
     expect(res.status).toBe(400)
   })
 
   it('400s data over 4KB in bytes even when under 4096 characters', async () => {
-    const res = await post({ query_id: queryId, action: 'selected', data: { blob: '水'.repeat(2000) } })
+    const res = await post({ group_id: groupId, action: 'selected', data: { blob: '水'.repeat(2000) } })
     expect(res.status).toBe(400)
   })
 
@@ -243,7 +243,7 @@ describe('feedback postback', () => {
     const res = await app.request('/public/search/analytics-fb-idx/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query_id: queryId, action: 'selected' }),
+      body: JSON.stringify({ group_id: groupId, action: 'selected' }),
     })
     expect(res.status).toBe(401)
   })
@@ -296,7 +296,7 @@ describe('analytics pull', () => {
   let pool: Pool
   let indexId: number
   let analyticsKey: string
-  let queryIds: string[] = []
+  let groupIds: string[] = []
 
   const app = new Hono()
   app.route('/', analyticsRoutes)
@@ -321,11 +321,11 @@ describe('analytics pull', () => {
     analyticsKey = ((await mint.json()) as { analytics_key: string }).analytics_key
 
     // 5 query rows, one with a feedback child → 6 events total
-    queryIds = []
+    groupIds = []
     for (let i = 0; i < 5; i++) {
-      queryIds.push(await logQuery(pool, indexId, { q: `query ${i}`, total: 0, result_ids: [] }))
+      groupIds.push(await logQuery(pool, indexId, { q: `query ${i}`, total: 0, result_ids: [] }))
     }
-    await logEvent(pool, indexId, queryIds[0], 'selected', { external_id: 'x', rank: 1 })
+    await logEvent(pool, indexId, groupIds[0], 'selected', { external_id: 'x', rank: 1 })
   })
   afterAll(async () => { await cleanupTestData(); await teardownSchema(); await closePool() })
 
@@ -344,9 +344,11 @@ describe('analytics pull', () => {
     expect(actions.filter(a => a === 'search')).toHaveLength(5)
     expect(actions.filter(a => a === 'selected')).toHaveLength(1)
     const feedback = body.events.find(e => e.action === 'selected')
-    expect(feedback.query_id).toBe(queryIds[0])
+    expect(feedback.group_id).toBe(groupIds[0])
+    const anchor = body.events.find(e => e.action === 'search')
+    expect(anchor.group_id).toBe(anchor.event_id)
     // row shape: index_id omitted
-    expect(Object.keys(body.events[0]).sort()).toEqual(['action', 'created_at', 'data', 'event_id', 'query_id'])
+    expect(Object.keys(body.events[0]).sort()).toEqual(['action', 'created_at', 'data', 'event_id', 'group_id'])
   })
 
   it('walks every row exactly once across pages', async () => {
@@ -365,7 +367,7 @@ describe('analytics pull', () => {
 
   it('filters by half-open date range', async () => {
     const mid = await pool.query(
-      `SELECT created_at::text AS ts FROM search_events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
+      `SELECT created_at::text AS ts FROM events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
     )
     const ts = mid.rows[0].ts
     const before = await pull(`to=${encodeURIComponent(ts)}`)
@@ -378,7 +380,7 @@ describe('analytics pull', () => {
 
   it('walks a from-filtered range exactly once across pages', async () => {
     const mid = await pool.query(
-      `SELECT created_at::text AS ts FROM search_events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
+      `SELECT created_at::text AS ts FROM events ORDER BY created_at, event_id OFFSET 3 LIMIT 1`,
     )
     const ts = mid.rows[0].ts
     const seen: string[] = []
@@ -398,8 +400,8 @@ describe('analytics pull', () => {
   it('removes feedback rows when their query row is deleted', async () => {
     const doomed = await logQuery(pool, indexId, { q: 'doomed', total: 0, result_ids: [] })
     await logEvent(pool, indexId, doomed, 'selected', {})
-    await pool.query('DELETE FROM search_events WHERE event_id = $1', [doomed])
-    const orphans = await pool.query('SELECT * FROM search_events WHERE query_id = $1', [doomed])
+    await pool.query('DELETE FROM events WHERE event_id = $1', [doomed])
+    const orphans = await pool.query('SELECT * FROM events WHERE group_id = $1', [doomed])
     expect(orphans.rows).toHaveLength(0)
   })
 
@@ -464,8 +466,9 @@ describe('analytics pull', () => {
   // break the earlier tests' row-count assertions if it ran before them.
   it('clamps limit to 500', async () => {
     await pool.query(
-      `INSERT INTO search_events (index_id, action, data)
-       SELECT $1, 'search', '{}' FROM generate_series(1, 600)`,
+      `INSERT INTO events (event_id, group_id, index_id, action, data)
+       SELECT id, id, $1, 'search', '{}'
+       FROM (SELECT gen_random_uuid() AS id FROM generate_series(1, 600)) g`,
       [indexId],
     )
     const res = await pull('limit=9999')

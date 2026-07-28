@@ -110,16 +110,16 @@ export const migrations: Migration[] = [
   {
     version: 10,
     description: 'Analytics event log and per-index analytics key',
-    sql: `CREATE TABLE IF NOT EXISTS search_events (
+    sql: `CREATE TABLE IF NOT EXISTS events (
               event_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               index_id    INTEGER NOT NULL REFERENCES search_indexes(index_id) ON DELETE CASCADE,
-              query_id    UUID REFERENCES search_events(event_id) ON DELETE CASCADE,
+              group_id    UUID NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
               action      TEXT NOT NULL,
               data        JSONB NOT NULL DEFAULT '{}',
               created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
           );
-          CREATE INDEX IF NOT EXISTS idx_events_index_created ON search_events (index_id, created_at, event_id);
-          CREATE INDEX IF NOT EXISTS idx_events_query ON search_events (query_id);
+          CREATE INDEX IF NOT EXISTS idx_events_index_created ON events (index_id, created_at, event_id);
+          CREATE INDEX IF NOT EXISTS idx_events_group ON events (group_id);
           ALTER TABLE search_indexes ADD COLUMN IF NOT EXISTS analytics_key_hash TEXT;`,
   },
 ]
