@@ -10,27 +10,12 @@ import type { AppEnv } from '../types'
 
 const MAX_PULL_LIMIT = 500
 
-// Date.parse falls back to a lenient, implementation-defined parser for any
-// string outside the ECMA-262 Date Time String Format (e.g. "1" silently
-// becomes 2001-01-01) — so Date.parse alone can't reject what Postgres would.
-// Requiring this shape first keeps Date.parse in its spec-compliant path.
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?([Zz]|[+-]\d{2}(:?\d{2})?)?)?$/
-
 export const analyticsRoutes = new Hono<AppEnv>()
 analyticsRoutes.use('/public/analytics/:name/events', analyticsAuth)
 
 analyticsRoutes.get('/public/analytics/:name/events', withIndex(async ({ pool, index }, c) => {
-  const fromParam = c.req.query('from')
-  const toParam = c.req.query('to')
-  for (const [label, value] of [['from', fromParam], ['to', toParam]] as const) {
-    if (value !== undefined && (!TIMESTAMP_PATTERN.test(value) || Number.isNaN(Date.parse(value)))) {
-      return apiError(c, 'VALIDATION_ERROR', `${label} must be an ISO 8601 timestamp`)
-    }
-  }
-  // Normalized before it reaches Postgres — passing the raw string through
-  // would make Postgres re-parse it, reopening the same ambiguity.
-  const from = fromParam !== undefined ? new Date(fromParam).toISOString() : undefined
-  const to = toParam !== undefined ? new Date(toParam).toISOString() : undefined
+  const from = c.req.query('from')
+  const to = c.req.query('to')
 
   const afterParam = c.req.query('after')
   const after = afterParam !== undefined ? decodeCursor(afterParam) ?? undefined : undefined
@@ -43,6 +28,14 @@ analyticsRoutes.get('/public/analytics/:name/events', withIndex(async ({ pool, i
   if (isNaN(limit) || limit < 1) return apiError(c, 'VALIDATION_ERROR', 'limit must be a positive integer')
   limit = Math.min(limit, MAX_PULL_LIMIT)
 
-  const result = await pullEvents(pool, index.index_id, { from, to, after, limit })
+  // Postgres is the parser of record for from/to and cursor contents. JS-side
+  // parsing is deliberately absent — Date.parse's lenient fallback reinterprets
+  // garbage ("1" → 2001, Feb 30 → Mar 2) instead of rejecting it. A value
+  // Postgres can't read raises SQLSTATE class 22 (data exception): a 400.
+  const result = await pullEvents(pool, index.index_id, { from, to, after, limit }).catch((err: unknown) => {
+    if (String((err as { code?: string }).code).startsWith('22')) return null
+    throw err
+  })
+  if (!result) return apiError(c, 'VALIDATION_ERROR', 'from, to, and after must be timestamps Postgres can read')
   return c.json(result, 200)
 }))

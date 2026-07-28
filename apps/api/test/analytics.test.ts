@@ -406,8 +406,15 @@ describe('analytics pull', () => {
   })
 
   it('400s an unparseable from', async () => {
-    const res = await pull('from=yesterday')
+    const res = await pull('from=purple')
     expect(res.status).toBe(400)
+  })
+
+  it('accepts Postgres relative timestamps like yesterday', async () => {
+    const res = await pull('from=yesterday')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: unknown[] }
+    expect(body.events).toHaveLength(6)   // all rows were inserted moments ago
   })
 
   it('400s a malformed after cursor', async () => {
@@ -436,6 +443,11 @@ describe('analytics pull', () => {
 
   it('400s a from value Date.parse accepts but Postgres would not', async () => {
     const res = await pull('from=1')
+    expect(res.status).toBe(400)
+  })
+
+  it('400s an impossible calendar date instead of rolling it over', async () => {
+    const res = await pull('from=2026-02-30')
     expect(res.status).toBe(400)
   })
 

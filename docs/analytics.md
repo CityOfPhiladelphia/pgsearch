@@ -60,7 +60,7 @@ curl "https://<api-url>/public/analytics/my-index/events?from=2026-07-01T00:00:0
 }
 ```
 
-- `from`/`to` bound a half-open ISO 8601 range (`created_at >= from`, `created_at < to`); both are optional.
+- `from`/`to` bound a half-open range (`created_at >= from`, `created_at < to`); both are optional. Postgres parses them, so anything it reads as a timestamp works — `2026-07-01`, full ISO 8601, or relative strings like `yesterday`; unreadable values are a `400 VALIDATION_ERROR`.
 - `after` is the opaque cursor from a previous response's `next`; pass it back verbatim to continue. Malformed cursors are rejected as a `400 VALIDATION_ERROR`.
 - `limit` defaults to 500 and is clamped to a maximum of 500.
 - Rows are flat — anchor and feedback rows come back interleaved in `created_at, event_id` order. Consumers reassemble interactions by grouping on `group_id`; anchors are the rows where `group_id` equals `event_id`.
