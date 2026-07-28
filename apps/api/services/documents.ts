@@ -7,16 +7,6 @@ import type { DocumentState, DocumentStateResponse } from '../types'
 export const DEFAULT_PAGE_SIZE = 1000
 export const MAX_PAGE_SIZE = 5000
 
-// Clamp a raw ?limit query value into [1, MAX_PAGE_SIZE]. Absent or unparseable
-// values fall back to DEFAULT_PAGE_SIZE — the endpoint favors a usable default
-// over a 400 on a malformed page size.
-export function clampLimit(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_PAGE_SIZE
-  const n = parseInt(raw, 10)
-  if (isNaN(n)) return DEFAULT_PAGE_SIZE
-  return Math.max(1, Math.min(n, MAX_PAGE_SIZE))
-}
-
 // One keyset page of index state ordered by external_id. `after` is an
 // exclusive lower bound (the previous page's last external_id). next_cursor is
 // the last external_id when the page is full, else null to end the walk.

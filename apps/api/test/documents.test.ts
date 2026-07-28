@@ -6,8 +6,9 @@ import { Hono } from 'hono'
 import type { Pool } from 'pg'
 import { getTestPool, setupSchema, teardownSchema, cleanupTestData, closePool } from './setup'
 import { createIndex } from '../services/indexes'
-import { listDocumentState, clampLimit, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../services/documents'
+import { listDocumentState } from '../services/documents'
 import { ingestRoutes } from '../routes/ingest'
+import { onError } from '../middleware/error'
 import type { DocumentState } from '../types'
 
 async function makeIndex(pool: Pool, name: string): Promise<number> {
@@ -142,25 +143,6 @@ describe('listDocumentState service', () => {
   })
 })
 
-describe('clampLimit', () => {
-  it('defaults when the param is absent', () => {
-    expect(clampLimit(undefined)).toBe(DEFAULT_PAGE_SIZE)
-  })
-  it('defaults when the param is not a number', () => {
-    expect(clampLimit('abc')).toBe(DEFAULT_PAGE_SIZE)
-  })
-  it('raises values below 1 to 1', () => {
-    expect(clampLimit('0')).toBe(1)
-    expect(clampLimit('-5')).toBe(1)
-  })
-  it('caps values above the max', () => {
-    expect(clampLimit('99999')).toBe(MAX_PAGE_SIZE)
-  })
-  it('passes through an in-range value', () => {
-    expect(clampLimit('500')).toBe(500)
-  })
-})
-
 describe('GET /public/index/:name/documents route', () => {
   let pool: Pool
   let indexKey: string
@@ -183,6 +165,7 @@ describe('GET /public/index/:name/documents route', () => {
 
   const app = new Hono()
   app.route('/', ingestRoutes)
+  app.onError(onError)
 
   beforeEach(async () => {
     const created = await createIndex(pool, { name: 'route-idx' })
@@ -208,6 +191,17 @@ describe('GET /public/index/:name/documents route', () => {
     for (const doc of body.documents) {
       expect(typeof doc.updated_at).toBe('string')
       expect(doc.metadata).toBeTypeOf('object')
+    }
+  })
+
+  it('400s a non-numeric or non-positive limit', async () => {
+    for (const bad of ['abc', '0', '-5']) {
+      const res = await app.request(`/public/index/route-idx/documents?limit=${bad}`, {
+        headers: { 'x-index-key': indexKey },
+      })
+      expect(res.status).toBe(400)
+      const body = await res.json() as { error: { code: string } }
+      expect(body.error.code).toBe('VALIDATION_ERROR')
     }
   })
 
