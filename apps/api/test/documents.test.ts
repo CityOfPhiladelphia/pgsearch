@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the document state listing service.
+// ABOUTME: Tests for the document state listing service and its route, including limit validation.
 // ABOUTME: Verifies keyset pagination, ordering, cursor termination, payload shape, and index isolation.
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest'

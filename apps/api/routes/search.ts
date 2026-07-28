@@ -1,5 +1,5 @@
 // ABOUTME: Search API routes for querying indexes.
-// ABOUTME: Handles hybrid search queries behind search key authentication.
+// ABOUTME: Handles hybrid search queries and the feedback postback endpoint, both behind search key authentication.
 
 import { Hono } from 'hono'
 import { searchAuth } from '../middleware/auth'

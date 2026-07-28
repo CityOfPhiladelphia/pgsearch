@@ -1,5 +1,5 @@
 // ABOUTME: Tests for search route query-param validation behind real key auth.
-// ABOUTME: Exercises kind_weights parsing; the 200 path is covered at the service seam (adapter needs bedrock).
+// ABOUTME: Exercises kind_weights and recency parsing; the 200 path is covered in analytics.test.ts (mode=lexical).
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Hono } from 'hono'

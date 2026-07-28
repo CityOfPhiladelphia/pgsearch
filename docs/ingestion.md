@@ -70,7 +70,7 @@ Query parameters:
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `limit` | No | Page size. Default 1000, max 5000. Out-of-range values are clamped, not rejected. |
+| `limit` | No | Page size. Default 1000 when omitted; values above 5000 clamp to 5000. A non-numeric or non-positive value is rejected with a 400. |
 | `after` | No | Exclusive cursor. Returns documents with `external_id > after`. Omit on the first page; pass the previous response's `next_cursor` on subsequent pages. |
 
 Response:
@@ -99,7 +99,7 @@ Body text is split into segments for embedding. The chunker splits on the coarse
 
 Segment size is measured by an estimate of `ceil(UTF-8 bytes / 3)`. A byte-level BPE token spans at least one byte, so real embedding tokens never exceed the byte count — this keeps every segment safely under the embedding model's hard input limit (Titan Embed v2: 8192) regardless of script or content, without tokenizing locally.
 
-Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. Configurable per-index via `max_segment_tokens` (default 1000) and `max_segments_per_document` (default 150).
+Each segment is embedded independently with the document title prepended for context. Smaller segments produce more focused embeddings; larger segments preserve more surrounding context. Configurable per-index via `max_segment_tokens` (default 1000) and `max_segments_per_document` (default 150). A document that chunks into more segments than `max_segments_per_document` is rejected with a 400 `VALIDATION_ERROR` before any embedding call runs.
 
 ## The Parse Library (`@phila/search-parse`)
 

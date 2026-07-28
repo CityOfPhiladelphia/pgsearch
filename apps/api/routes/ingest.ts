@@ -1,5 +1,5 @@
 // ABOUTME: Ingest API routes for document management.
-// ABOUTME: Handles document ingestion and deletion behind index key authentication.
+// ABOUTME: Handles document ingestion, deletion, and document-state export listing behind index key authentication.
 
 import { Hono } from 'hono'
 import { indexAuth } from '../middleware/auth'

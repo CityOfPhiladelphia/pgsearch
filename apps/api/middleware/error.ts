@@ -1,5 +1,5 @@
 // ABOUTME: Consistent error response formatting for all API endpoints.
-// ABOUTME: Provides helper functions to return standardized error JSON.
+// ABOUTME: Provides helper functions to return standardized error JSON, plus the global onError handler.
 
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'

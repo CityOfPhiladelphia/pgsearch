@@ -1,5 +1,5 @@
 // ABOUTME: Lambda entry point for the pgsearch hybrid search API.
-// ABOUTME: Wires all route groups (admin, ingest, search, health) with cold-start migrations.
+// ABOUTME: Wires all route groups (admin, ingest, search, prompts, rag, analytics, health) with cold-start migrations.
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
