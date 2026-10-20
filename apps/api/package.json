@@ -15,7 +15,7 @@
     "@phila/llm": "workspace:*",
     "@phila/search-embeddings": "workspace:*",
     "bcryptjs": "^2.4.3",
-    "hono": "^4.12.29",
+    "hono": "^4.13.11",
     "pg": "^8.20.0",
     "pgvector": "^0.2.0"
   },
